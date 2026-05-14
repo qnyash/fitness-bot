@@ -7,12 +7,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# ================= НАСТРОЙКИ =================
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-ADMIN_ID = 466924747  # Твой ID для админ-панели
+ADMIN_ID = 466924747
 
 # ================= ПОДКЛЮЧЕНИЕ К GOOGLE SHEETS =================
 gc = None
@@ -38,10 +37,6 @@ def init_db():
     if 'Program' not in worksheets:
         ws = sh.add_worksheet(title="Program", rows=100, cols=5)
         ws.append_row(['day', 'exercise', 'sets', 'reps'])
-        ws.append_rows([
-            ['Д1', 'Присед', '4', '10'], ['Д1', 'Выпады', '3', '12'], ['Д1', 'Мост', '4', '15'],
-            ['Д2', 'Тяга в наклоне', '3', '10'], ['Д2', 'Жим лёжа', '3', '12'], ['Д2', 'Планка', '3', '45']
-        ])
         
     if 'History' not in worksheets:
         ws = sh.add_worksheet(title="History", rows=100, cols=5)
@@ -51,32 +46,47 @@ def init_db():
         ws = sh.add_worksheet(title="Progress", rows=100, cols=3)
         ws.append_row(['date', 'user_id', 'note'])
 
+    if 'Library' not in worksheets:
+        ws = sh.add_worksheet(title="Library", rows=100, cols=4)
+        ws.append_row(['category', 'name', 'description', 'image_url'])
+        ws.append_row(['Ноги', 'Приседания', 'Спина прямая, колени за носки не выходят.', ''])
+
 init_db()
 
-# ================= ПАМЯТЬ БОТА =================
 active_workouts = {}
-user_states = {}  # Для запоминания того, что вводит пользователь (например, заметки)
+user_states = {}
 
 def get_program_from_sheet(day):
     if not sh: return []
     try:
         ws = sh.worksheet("Program")
-        records = ws.get_all_records()
-        return [r for r in records if str(r.get('day', '')) == day]
-    except:
-        return []
+        return [r for r in ws.get_all_records() if str(r.get('day', '')) == day]
+    except: return []
+
+def get_lib_categories():
+    if not sh: return []
+    try:
+        ws = sh.worksheet("Library")
+        cats = [str(r.get('category', '')) for r in ws.get_all_records() if r.get('category')]
+        return list(set(cats))
+    except: return []
+
+def get_lib_exercises(cat):
+    if not sh: return []
+    try:
+        ws = sh.worksheet("Library")
+        return [r for r in ws.get_all_records() if str(r.get('category', '')) == cat]
+    except: return []
 
 # ================= КЛАВИАТУРЫ =================
 def main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.row("🏋️ Тренировка")
     markup.row("📏 Замеры", "📅 История")
-    markup.row("🏋️‍♀️ Прогресс", "📚 Библиотека")
+    markup.row("📈 Прогресс", "📚 Библиотека") # ТУТ ИСПРАВЛЕН ЭМОДЗИ
     markup.row("😩 Сегодня нет сил")
-    
     if user_id == ADMIN_ID:
         markup.row("⚙️ Админ-панель")
-        
     return markup
 
 def workout_keyboard(user_id):
@@ -85,17 +95,14 @@ def workout_keyboard(user_id):
     if not workout: return markup
     
     for i, ex in enumerate(workout['program']):
-        is_done = i in workout['done']
-        icon = "✅" if is_done else "☐"
-        name = ex.get('exercise', 'Упражнение')
-        sets = ex.get('sets', '0')
-        reps = ex.get('reps', '0')
+        icon = "✅" if i in workout['done'] else "☐"
+        name = ex.get('exercise', 'Упр')
+        sets, reps = ex.get('sets', '0'), ex.get('reps', '0')
         markup.add(types.InlineKeyboardButton(f"{icon} {name} ({sets}x{reps})", callback_data=f"ex_{i}"))
-        
     markup.add(types.InlineKeyboardButton("🏁 Завершить тренировку", callback_data="finish"))
     return markup
 
-# ================= ОБРАБОТЧИКИ =================
+# ================= ОБРАБОТЧИКИ СООБЩЕНИЙ =================
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -106,111 +113,139 @@ def start(message):
             if str(user_id) not in ws.col_values(1):
                 ws.append_row([str(user_id), message.from_user.first_name, datetime.now().strftime("%Y-%m-%d %H:%M")])
         except: pass
-
-    bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}! 👋\nЯ твой фитнес-бот.", reply_markup=main_keyboard(user_id))
+    bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}! 👋", reply_markup=main_keyboard(user_id))
 
 @bot.message_handler(func=lambda m: True)
 def handle_text(message):
     text = message.text.strip()
     user_id = message.from_user.id
     
-    # 1. Проверяем, не пишет ли пользователь сейчас заметку о прогрессе
     if user_states.get(user_id) == 'waiting_progress':
         if "Отмена" in text:
             user_states[user_id] = None
-            bot.send_message(message.chat.id, "Ввод прогресса отменен.", reply_markup=main_keyboard(user_id))
+            bot.send_message(message.chat.id, "Отменено.", reply_markup=main_keyboard(user_id))
             return
-            
         if sh:
             try:
-                date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                sh.worksheet("Progress").append_row([date_str, str(user_id), text])
+                sh.worksheet("Progress").append_row([datetime.now().strftime("%Y-%m-%d %H:%M"), str(user_id), text])
             except: pass
         user_states[user_id] = None
-        bot.send_message(message.chat.id, "✅ Твой прогресс успешно сохранён в дневник!", reply_markup=main_keyboard(user_id))
+        bot.send_message(message.chat.id, "✅ Твой прогресс сохранён в таблицу!", reply_markup=main_keyboard(user_id))
         return
 
-    # 2. Обработка обычного меню (Ищем только КЛЮЧЕВЫЕ слова, игнорируя смайлики)
     if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("Д1 — Ноги/ягодицы", callback_data="day_Д1"))
         markup.add(types.InlineKeyboardButton("Д2 — Спина/плечи", callback_data="day_Д2"))
         bot.send_message(message.chat.id, "Выбери день тренировки:", reply_markup=markup)
         
-    elif "Прогресс" in text:
+    elif "Прогресс" in text or "📈" in text:
         user_states[user_id] = 'waiting_progress'
-        cancel_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        cancel_markup.add("❌ Отмена")
-        bot.send_message(message.chat.id, "📝 Напиши свои результаты (например: 'Присед 50кг 3х10').\nЯ сохраню это в дневник!", reply_markup=cancel_markup)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add("❌ Отмена")
+        bot.send_message(message.chat.id, "📝 Напиши свой прогресс (например: 'Присед 50кг').", reply_markup=markup)
+
+    elif "Библиотека" in text or "📚" in text:
+        cats = get_lib_categories()
+        if not cats:
+            bot.send_message(message.chat.id, "Библиотека пуста. Добавь данные в таблицу!")
+            return
+        markup = types.InlineKeyboardMarkup()
+        for cat in cats: markup.add(types.InlineKeyboardButton(cat, callback_data=f"libcat_{cat}"))
+        bot.send_message(message.chat.id, "📚 Выбери категорию:", reply_markup=markup)
         
     elif "нет сил" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("➡️ Перенести", callback_data="nopower_postpone"))
         markup.add(types.InlineKeyboardButton("❌ Пропустить", callback_data="nopower_skip"))
         markup.add(types.InlineKeyboardButton("💡 Легкая версия", callback_data="day_Легкая"))
-        bot.send_message(message.chat.id, "Ничего страшного, слушай своё тело. Что будем делать?", reply_markup=markup)
+        bot.send_message(message.chat.id, "Слушай своё тело. Что будем делать?", reply_markup=markup)
         
     elif "Админ" in text and user_id == ADMIN_ID:
-        sheet_url = os.environ.get('SPREADSHEET_URL')
-        msg = "👑 **Админ-панель**\n\nСамый удобный способ управлять ботом — прямо в Google Таблице!\n\n💡 Чтобы добавить **Легкую версию**, просто перейди на вкладку `Program` и добавь упражнения, указав в колонке `day` слово `Легкая`."
+        url = os.environ.get('SPREADSHEET_URL')
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📊 Открыть базу данных", url=sheet_url))
-        bot.send_message(message.chat.id, msg, parse_mode="Markdown", reply_markup=main_keyboard(user_id))
-        
+        markup.add(types.InlineKeyboardButton("📊 Открыть базу данных", url=url))
+        bot.send_message(message.chat.id, "👑 Админ-панель:", reply_markup=markup)
     else:
-        bot.send_message(message.chat.id, "Раздел в разработке 🛠 Используй кнопки меню.", reply_markup=main_keyboard(user_id))
+        bot.send_message(message.chat.id, "Используй кнопки 👇", reply_markup=main_keyboard(user_id))
 
+# ================= ОБРАБОТЧИКИ КНОПОК =================
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
     
     if call.data == "nopower_postpone":
-        bot.edit_message_text("🛋 Тренировка перенесена на завтра. Отдыхай, набирайся сил!", call.message.chat.id, call.message.id)
-    
+        bot.edit_message_text("🛋 Перенесено на завтра. Отдыхай!", call.message.chat.id, call.message.id)
     elif call.data == "nopower_skip":
         if sh:
-            try:
-                date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                sh.worksheet("History").append_row([date_str, str(user_id), call.from_user.first_name, "Пропуск", "Нет сил"])
+            try: sh.worksheet("History").append_row([datetime.now().strftime("%Y-%m-%d %H:%M"), str(user_id), call.from_user.first_name, "Пропуск", "Нет сил"])
             except: pass
-        bot.edit_message_text("❌ Тренировка пропущена. Записал в историю.", call.message.chat.id, call.message.id)
+        bot.edit_message_text("❌ Пропущено. Записано в дневник.", call.message.chat.id, call.message.id)
 
     elif call.data.startswith("day_"):
         day = call.data.replace("day_", "")
         program = get_program_from_sheet(day)
-        
         if not program:
-            bot.answer_callback_query(call.id, f"Программа '{day}' пока пуста. Добавь её в таблице!")
+            bot.answer_callback_query(call.id, f"Программа '{day}' пуста!")
             return
-            
         active_workouts[user_id] = {'day': day, 'program': program, 'done': []}
-        bot.edit_message_text(f"🏋️ **Тренировка: {day}**\nОтмечай выполненные:", call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
+        bot.edit_message_text(f"🏋️ **Тренировка: {day}**", call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
         
     elif call.data.startswith("ex_"):
-        if user_id not in active_workouts:
-            bot.answer_callback_query(call.id, "Тренировка сброшена. Начни заново.")
-            return
-            
+        if user_id not in active_workouts: return
         ex_idx = int(call.data.split("_")[1])
         done = active_workouts[user_id]['done']
         if ex_idx in done: done.remove(ex_idx)
         else: done.append(ex_idx)
-        
-        day = active_workouts[user_id]['day']
-        bot.edit_message_text(f"🏋️ **Тренировка: {day}**\nОтмечай выполненные:", call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
+        bot.edit_message_text(f"🏋️ **Тренировка: {active_workouts[user_id]['day']}**", call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
         
     elif call.data == "finish":
         if user_id not in active_workouts: return
         workout = active_workouts.pop(user_id)
         day = workout['day']
         status = "Полностью" if len(workout['done']) == len(workout['program']) else "Частично"
-        
         if sh:
-            try:
-                date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                sh.worksheet("History").append_row([date_str, str(user_id), call.from_user.first_name, day, status])
+            try: sh.worksheet("History").append_row([datetime.now().strftime("%Y-%m-%d %H:%M"), str(user_id), call.from_user.first_name, day, status])
             except: pass
-        bot.edit_message_text(f"🏁 **Тренировка {day} завершена!**\nСтатус: {status}\nРезультат записан в дневник. Ты молодец! 🔥", call.message.chat.id, call.message.id, parse_mode="Markdown")
+        bot.edit_message_text(f"🏁 **{day} завершена!**\nСтатус: {status}\nЗаписано в дневник! 🔥", call.message.chat.id, call.message.id, parse_mode="Markdown")
+
+    # ----- ЛОГИКА БИБЛИОТЕКИ -----
+    elif call.data.startswith("libcat_"):
+        cat = call.data.replace("libcat_", "")
+        exs = get_lib_exercises(cat)
+        markup = types.InlineKeyboardMarkup()
+        for i, ex in enumerate(exs):
+            markup.add(types.InlineKeyboardButton(ex.get('name', 'Упр'), callback_data=f"libex_{cat}_{i}"))
+        markup.add(types.InlineKeyboardButton("↩️ Назад к категориями", callback_data="lib_back"))
+        bot.edit_message_text(f"📚 **Категория: {cat}**\nВыбери упражнение:", call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=markup)
+        
+    elif call.data.startswith("libex_"):
+        parts = call.data.split("_")
+        cat, idx = parts[1], int(parts[2])
+        ex = get_lib_exercises(cat)[idx]
+        
+        name = ex.get('name', '')
+        desc = ex.get('description', '')
+        img = str(ex.get('image_url', '')).strip()
+        text = f"🏋️ **{name}**\n\n{desc}"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("↩️ Назад к списку", callback_data=f"libcat_{cat}"))
+        
+        bot.delete_message(call.message.chat.id, call.message.id) # Удаляем меню
+        
+        if img and img.startswith("http"):
+            try: bot.send_photo(call.message.chat.id, img, caption=text, parse_mode="Markdown", reply_markup=markup)
+            except: bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+        else:
+            bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+
+    elif call.data == "lib_back":
+        cats = get_lib_categories()
+        markup = types.InlineKeyboardMarkup()
+        for c in cats: markup.add(types.InlineKeyboardButton(c, callback_data=f"libcat_{c}"))
+        bot.edit_message_text("📚 Выбери категорию:", call.message.chat.id, call.message.id, reply_markup=markup)
+
 
 # ================= WEBHOOK И СЕРВЕР =================
 @app.route('/' + TOKEN, methods=['POST'])
