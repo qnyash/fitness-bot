@@ -63,8 +63,8 @@ def main_menu_keyboard(is_admin=False):
 def workout_days_inline():
     return {
         'inline_keyboard': [[
-            {'text': 'Д1 — Ноги/ягодицы', 'callback_data': 'day_Д1'},
-            {'text': 'Д2 — Спина/плечи', 'callback_data': 'day_Д2'}
+            {'text': 'Д1', 'callback_data': 'day_Д1'},
+            {'text': 'Д2', 'callback_data': 'day_Д2'}
         ]]
     }
 
