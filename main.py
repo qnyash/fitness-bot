@@ -25,7 +25,7 @@ try:
     gc = gspread.authorize(credentials)
     sh = gc.open_by_url(os.environ.get('SPREADSHEET_URL'))
 except Exception as e:
-    print(f"Ошибка подключения к таблице: {e}")
+    pass
 
 def init_db():
     if not sh: return
@@ -74,7 +74,6 @@ def main_keyboard(user_id):
     markup.row("🏋️‍♀️ Прогресс", "📚 Библиотека")
     markup.row("😩 Сегодня нет сил")
     
-    # Админ-кнопка появляется только у тебя
     if user_id == ADMIN_ID:
         markup.row("⚙️ Админ-панель")
         
@@ -117,7 +116,7 @@ def handle_text(message):
     
     # 1. Проверяем, не пишет ли пользователь сейчас заметку о прогрессе
     if user_states.get(user_id) == 'waiting_progress':
-        if text == "❌ Отмена":
+        if "Отмена" in text:
             user_states[user_id] = None
             bot.send_message(message.chat.id, "Ввод прогресса отменен.", reply_markup=main_keyboard(user_id))
             return
@@ -131,27 +130,27 @@ def handle_text(message):
         bot.send_message(message.chat.id, "✅ Твой прогресс успешно сохранён в дневник!", reply_markup=main_keyboard(user_id))
         return
 
-    # 2. Обработка обычного меню
-    if text == "🏋️ Тренировка":
+    # 2. Обработка обычного меню (Ищем только КЛЮЧЕВЫЕ слова, игнорируя смайлики)
+    if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("Д1 — Ноги/ягодицы", callback_data="day_Д1"))
         markup.add(types.InlineKeyboardButton("Д2 — Спина/плечи", callback_data="day_Д2"))
         bot.send_message(message.chat.id, "Выбери день тренировки:", reply_markup=markup)
         
-    elif text == "🏋️‍♀️ Прогресс":
+    elif "Прогресс" in text:
         user_states[user_id] = 'waiting_progress'
         cancel_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         cancel_markup.add("❌ Отмена")
         bot.send_message(message.chat.id, "📝 Напиши свои результаты (например: 'Присед 50кг 3х10').\nЯ сохраню это в дневник!", reply_markup=cancel_markup)
         
-    elif text == "😩 Сегодня нет сил":
+    elif "нет сил" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("➡️ Перенести", callback_data="nopower_postpone"))
         markup.add(types.InlineKeyboardButton("❌ Пропустить", callback_data="nopower_skip"))
         markup.add(types.InlineKeyboardButton("💡 Легкая версия", callback_data="day_Легкая"))
         bot.send_message(message.chat.id, "Ничего страшного, слушай своё тело. Что будем делать?", reply_markup=markup)
         
-    elif text == "⚙️ Админ-панель" and user_id == ADMIN_ID:
+    elif "Админ" in text and user_id == ADMIN_ID:
         sheet_url = os.environ.get('SPREADSHEET_URL')
         msg = "👑 **Админ-панель**\n\nСамый удобный способ управлять ботом — прямо в Google Таблице!\n\n💡 Чтобы добавить **Легкую версию**, просто перейди на вкладку `Program` и добавь упражнения, указав в колонке `day` слово `Легкая`."
         markup = types.InlineKeyboardMarkup()
@@ -213,7 +212,7 @@ def callback_query(call):
             except: pass
         bot.edit_message_text(f"🏁 **Тренировка {day} завершена!**\nСтатус: {status}\nРезультат записан в дневник. Ты молодец! 🔥", call.message.chat.id, call.message.id, parse_mode="Markdown")
 
-# ================= WEBHOOK =================
+# ================= WEBHOOK И СЕРВЕР =================
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
     json_str = request.get_data().decode('UTF-8')
