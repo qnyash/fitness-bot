@@ -1,487 +1,216 @@
-from flask import Flask, request, jsonify
-import requests
 import os
+import json
+import telebot
+from telebot import types
+from flask import Flask, request
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
+# ================= НАСТРОЙКИ =================
+TOKEN = os.environ.get("BOT_TOKEN")
+bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# Конфигурация
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8609928616:AAGTJAM_ECpJ4e4BZweqsINpOtTSKO5CDMY')
-ADMIN_ID = 466924747
-TELEGRAM_API = f'https://api.telegram.org/bot{BOT_TOKEN}'
+# ================= ПОДКЛЮЧЕНИЕ К GOOGLE SHEETS =================
+gc = None
+sh = None
+try:
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    creds_dict = json.loads(creds_json)
+    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc = gspread.authorize(credentials)
+    sh = gc.open_by_url(os.environ.get('SPREADSHEET_URL'))
+    print("✅ Успешное подключение к Google Таблице!")
+except Exception as e:
+    print(f"🚨 Ошибка подключения к таблице: {e}")
 
-# ==========================================
-# РАБОТА С ТАБЛИЦАМИ (Google Sheets через API)
-# ==========================================
-# Для простоты пока используем словари вместо Google Sheets
-# Позже можно подключить Google Sheets API
+# Инициализация вкладок в таблице
+def init_db():
+    if not sh: return
+    worksheets = [ws.title for ws in sh.worksheets()]
+    
+    if 'Users' not in worksheets:
+        ws = sh.add_worksheet(title="Users", rows=100, cols=5)
+        ws.append_row(['user_id', 'name', 'date_joined'])
+        
+    if 'Program' not in worksheets:
+        ws = sh.add_worksheet(title="Program", rows=100, cols=5)
+        ws.append_row(['day', 'exercise', 'sets', 'reps'])
+        ws.append_rows([
+            ['Д1', 'Присед', '4', '10'], ['Д1', 'Выпады', '3', '12'], ['Д1', 'Мост', '4', '15'],
+            ['Д2', 'Тяга в наклоне', '3', '10'], ['Д2', 'Жим лёжа', '3', '12'], ['Д2', 'Планка', '3', '45']
+        ])
+        
+    if 'History' not in worksheets:
+        ws = sh.add_worksheet(title="History", rows=100, cols=5)
+        ws.append_row(['date', 'user_id', 'name', 'day', 'status'])
 
-users_db = {}  # {user_id: {username, first_name, state, temp_data}}
-program_db = {
-    'Д1': [
-        {'name': 'Присед', 'sets': '4', 'reps': '10'},
-        {'name': 'Выпады', 'sets': '3', 'reps': '12'},
-        {'name': 'Мост', 'sets': '4', 'reps': '15'}
-    ],
-    'Д2': [
-        {'name': 'Тяга в наклоне', 'sets': '3', 'reps': '10'},
-        {'name': 'Жим лёжа', 'sets': '3', 'reps': '12'},
-        {'name': 'Планка', 'sets': '3', 'reps': '45'}
-    ]
-}
-history_db = {}  # {user_id: [{date, day, completed}]}
-mood_db = {}  # {user_id: [{date, mood, energy}]}
+init_db()
 
-library_db = {
-    'ноги': [
-        {'name': 'Присед', 'desc': 'Станьте прямо, ноги на ширине плеч. Присядьте, спина прямая.', 'img': ''}
-    ],
-    'ягодицы': [
-        {'name': 'Мост', 'desc': 'Лежа на спине, согните ноги. Поднимайте таз вверх.', 'img': ''}
-    ],
-    'спина': [
-        {'name': 'Тяга в наклоне', 'desc': 'Наклонитесь, спина прямая. Тяните гантели к поясу.', 'img': ''}
-    ],
-    'плечи': [
-        {'name': 'Жим лёжа', 'desc': 'Гантели у плеч. Выжмите вверх до полного выпрямления.', 'img': ''}
-    ]
-}
+# ================= ПАМЯТЬ БОТА (ДЛЯ ГАЛОЧЕК) =================
+# Храним текущие тренировки: { user_id: {'day': 'Д1', 'program': [...], 'done': []} }
+active_workouts = {}
 
-# ==========================================
-# КЛАВИАТУРЫ
-# ==========================================
-def main_menu_keyboard(is_admin=False):
-    keyboard = [
-        [{'text': '🏋️ Тренировка'}],
-        [{'text': '📏 Замеры'}, {'text': '📅 История'}],
-        [{'text': '🏋️‍♀️ Прогресс'}, {'text': '📚 Библиотека'}],
-        [{'text': '😩 Сегодня нет сил'}]
-    ]
-    if is_admin:
-        keyboard.append([{'text': '⚙️ Админ'}])
-    return {'keyboard': keyboard, 'resize_keyboard': True}
+def get_program_from_sheet(day):
+    if not sh: return []
+    try:
+        ws = sh.worksheet("Program")
+        records = ws.get_all_records()
+        return [r for r in records if str(r.get('day', '')) == day]
+    except:
+        return []
 
-def workout_days_inline():
-    return {
-        'inline_keyboard': [[
-            {'text': 'Д1', 'callback_data': 'day_Д1'},
-            {'text': 'Д2', 'callback_data': 'day_Д2'}
-        ]]
-    }
+# ================= КЛАВИАТУРЫ =================
+def main_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.row("🏋️ Тренировка")
+    markup.row("📏 Замеры", "📅 История")
+    markup.row("🏋️‍♀️ Прогресс", "📚 Библиотека")
+    return markup
 
-def exercises_inline(day, exercises, done_array=None):
-    done = done_array or []
-    buttons = []
-    for i, ex in enumerate(exercises):
+def workout_keyboard(user_id):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    workout = active_workouts.get(user_id)
+    
+    if not workout: return markup
+    
+    program = workout['program']
+    done = workout['done']
+    
+    for i, ex in enumerate(program):
         is_done = i in done
-        label = f"✅ {ex['name']} {ex['sets']}x{ex['reps']}" if is_done else f"☐ {ex['name']} {ex['sets']}x{ex['reps']}"
-        buttons.append([{'text': label, 'callback_data': f'ex_{day}_{i}'}])
-    
-    buttons.append([{'text': '🏁 Завершить тренировку', 'callback_data': f'finish_{day}'}])
-    return {'inline_keyboard': buttons}
+        icon = "✅" if is_done else "☐"
+        name = ex.get('exercise', 'Упражнение')
+        sets = ex.get('sets', '0')
+        reps = ex.get('reps', '0')
+        
+        btn_text = f"{icon} {name} ({sets}x{reps})"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"ex_{i}"))
+        
+    markup.add(types.InlineKeyboardButton("🏁 Завершить тренировку", callback_data="finish"))
+    return markup
 
-def mood_inline():
-    return {
-        'inline_keyboard': [
-            [{'text': '😍 супер', 'callback_data': 'mood_супер'}, {'text': '🙂 норм', 'callback_data': 'mood_норм'}],
-            [{'text': '😐 тяжело', 'callback_data': 'mood_тяжело'}, {'text': '😵 убило', 'callback_data': 'mood_убило'}]
-        ]
-    }
-
-def energy_inline():
-    row = [{'text': str(i), 'callback_data': f'energy_{i}'} for i in range(1, 11)]
-    return {'inline_keyboard': [row]}
-
-def measurements_inline():
-    return {
-        'inline_keyboard': [
-            [{'text': '➕ Ввести "Было"', 'callback_data': 'meas_before'}, {'text': '➕ Ввести "Стало"', 'callback_data': 'meas_after'}],
-            [{'text': '📊 Посмотреть разницу', 'callback_data': 'meas_diff'}]
-        ]
-    }
-
-def no_power_inline():
-    return {
-        'inline_keyboard': [
-            [{'text': '➡️ Перенести', 'callback_data': 'nopower_postpone'}, {'text': '❌ Пропустить', 'callback_data': 'nopower_skip'}],
-            [{'text': '💡 Легкая версия', 'callback_data': 'nopower_light'}]
-        ]
-    }
-
-def admin_menu_inline():
-    return {
-        'inline_keyboard': [
-            [{'text': '➕ Добавить упражнение', 'callback_data': 'admin_add'}],
-            [{'text': '✏️ Изменить Д1', 'callback_data': 'admin_edit_Д1'}, {'text': '✏️ Изменить Д2', 'callback_data': 'admin_edit_Д2'}],
-            [{'text': '🗑 Удалить упражнение', 'callback_data': 'admin_del'}],
-            [{'text': '↩️ Назад', 'callback_data': 'main_menu'}]
-        ]
-    }
-
-def library_categories_inline():
-    cats = list(library_db.keys())
-    rows = [[{'text': cat, 'callback_data': f'lib_{cat}'}] for cat in cats]
-    return {'inline_keyboard': rows}
-
-def back_inline():
-    return {'inline_keyboard': [[{'text': '↩️ Назад', 'callback_data': 'main_menu'}]]}
-
-# ==========================================
-# ОТПРАВКА СООБЩЕНИЙ
-# ==========================================
-def send_message(chat_id, text, reply_markup=None):
-    payload = {'chat_id': chat_id, 'text': text}
-    if reply_markup:
-        payload['reply_markup'] = reply_markup
-    
-    try:
-        requests.post(f'{TELEGRAM_API}/sendMessage', json=payload, timeout=5)
-    except Exception as e:
-        print(f"Error sending message: {e}")
-
-def edit_message_text(chat_id, message_id, text, reply_markup=None):
-    payload = {'chat_id': chat_id, 'message_id': message_id, 'text': text}
-    if reply_markup:
-        payload['reply_markup'] = reply_markup
-    
-    try:
-        requests.post(f'{TELEGRAM_API}/editMessageText', json=payload, timeout=5)
-    except Exception as e:
-        print(f"Error editing message: {e}")
-
-def answer_callback(callback_query_id, text=''):
-    try:
-        requests.post(f'{TELEGRAM_API}/answerCallbackQuery', json={
-            'callback_query_id': callback_query_id,
-            'text': text
-        }, timeout=5)
-    except Exception as e:
-        print(f"Error answering callback: {e}")
-
-# ==========================================
-# ОБРАБОТЧИКИ
-# ==========================================
-def handle_message(msg):
-    chat_id = msg['chat']['id']
-    user_id = msg['from']['id']
-    text = msg.get('text', '')
-    first_name = msg['from'].get('first_name', '')
-    username = msg['from'].get('username', '')
-    is_admin = (user_id == ADMIN_ID)
-    
-    # Создаем пользователя, если его нет
-    if user_id not in users_db:
-        users_db[user_id] = {
-            'username': username,
-            'first_name': first_name,
-            'state': 'idle',
-            'temp_data': {}
-        }
-    
-    user = users_db[user_id]
-    
-    # Обработка команд
-    if text == '/start':
-        send_message(chat_id, f'Привет, {first_name}! 👋\n\nТвой фитнес-бот готов.', main_menu_keyboard(is_admin))
-        return
-    
-    if 'Тренировка' in text or '🏋️' in text:
-        send_message(chat_id, 'Выбери день тренировки:', workout_days_inline())
-        return
-    
-    if 'Замеры' in text:
-        send_message(chat_id, '📏 Замеры:', measurements_inline())
-        return
-    
-    if 'История' in text:
-        history = history_db.get(user_id, [])
-        if history:
-            txt = '📅 История тренировок:\n\n'
-            for h in history[-5:]:  # последние 5
-                status = '✅' if h['completed'] else '❌'
-                txt += f"{status} {h['date']} - {h['day']}\n"
-            send_message(chat_id, txt, main_menu_keyboard(is_admin))
-        else:
-            send_message(chat_id, '📅 История пуста. Начни тренировку!', main_menu_keyboard(is_admin))
-        return
-    
-    if 'Прогресс' in text:
-        send_message(chat_id, '🏋️‍♀️ Прогресс (в разработке)', main_menu_keyboard(is_admin))
-        return
-    
-    if 'Библиотека' in text:
-        send_message(chat_id, '📚 Библиотека:', library_categories_inline())
-        return
-    
-    if 'Сегодня нет сил' in text or '😩' in text:
-        send_message(chat_id, 'Что делаем?', no_power_inline())
-        return
-    
-    if 'Админ' in text and is_admin:
-        send_message(chat_id, '⚙️ Админ панель:', admin_menu_inline())
-        return
-    
-    # Если пользователь в состоянии ожидания данных
-    if user['state'] == 'waiting_measurements_before':
+# ================= ОБРАБОТЧИКИ =================
+@bot.message_handler(commands=['start'])
+def start(message):
+    # Сохраняем пользователя в базу
+    if sh:
         try:
-            values = text.split(',')
-            if len(values) >= 6:
-                save_measurements(user_id, 'before', {
-                    'weight': values[0], 'waist': values[1], 'hips': values[2],
-                    'chest': values[3], 'leg': values[4], 'arm': values[5]
-                })
-                user['state'] = 'idle'
-                send_message(chat_id, '✅ Данные "Было" сохранены!', main_menu_keyboard(is_admin))
-            else:
-                send_message(chat_id, '❌ Формат: вес,талия,бедра,грудь,нога,рука')
+            ws = sh.worksheet("Users")
+            users = ws.col_values(1)
+            if str(message.from_user.id) not in users:
+                date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                ws.append_row([str(message.from_user.id), message.from_user.first_name, date_str])
         except:
-            send_message(chat_id, '❌ Ошибка. Формат: вес,талия,бедра,грудь,нога,рука')
-        return
-    
-    if user['state'] == 'waiting_measurements_after':
-        try:
-            values = text.split(',')
-            if len(values) >= 6:
-                save_measurements(user_id, 'after', {
-                    'weight': values[0], 'waist': values[1], 'hips': values[2],
-                    'chest': values[3], 'leg': values[4], 'arm': values[5]
-                })
-                user['state'] = 'idle'
-                send_message(chat_id, '✅ Данные "Стало" сохранены!', main_menu_keyboard(is_admin))
-            else:
-                send_message(chat_id, '❌ Формат: вес,талия,бедра,грудь,нога,рука')
-        except:
-            send_message(chat_id, '❌ Ошибка. Формат: вес,талия,бедра,грудь,нога,рука')
-        return
-    
-    if user['state'] == 'admin_adding':
-        try:
-            parts = text.split('|')
-            if len(parts) >= 4:
-                day, name, sets, reps = parts[0], parts[1], parts[2], parts[3]
-                if day not in program_db:
-                    program_db[day] = []
-                program_db[day].append({'name': name, 'sets': sets, 'reps': reps})
-                user['state'] = 'idle'
-                send_message(chat_id, f'✅ Добавлено: {name} в {day}', main_menu_keyboard(is_admin))
-            else:
-                send_message(chat_id, '❌ Формат: День|Название|Подходы|Повторы')
-        except:
-            send_message(chat_id, '❌ Ошибка формата')
-        return
-    
-    if user['state'] == 'admin_deleting':
-        try:
-            parts = text.split('|')
-            if len(parts) >= 2:
-                day, name = parts[0], parts[1]
-                if day in program_db:
-                    program_db[day] = [ex for ex in program_db[day] if ex['name'] != name]
-                user['state'] = 'idle'
-                send_message(chat_id, f'✅ Удалено: {name} из {day}', main_menu_keyboard(is_admin))
-            else:
-                send_message(chat_id, '❌ Формат: День|Название')
-        except:
-            send_message(chat_id, '❌ Ошибка формата')
-        return
-    
-    # По умолчанию
-    send_message(chat_id, 'Используй кнопки меню 👇', main_menu_keyboard(is_admin))
+            pass
 
-def handle_callback(query):
-    callback_query_id = query['id']
-    user_id = query['from']['id']
-    chat_id = query['message']['chat']['id']
-    message_id = query['message']['message_id']
-    data = query.get('data', '')
-    is_admin = (user_id == ADMIN_ID)
+    bot.send_message(
+        message.chat.id,
+        f"Привет, {message.from_user.first_name}! 👋\nЯ твой фитнес-бот. Выбирай действие в меню ниже.",
+        reply_markup=main_keyboard()
+    )
+
+@bot.message_handler(func=lambda m: True)
+def handle_text(message):
+    text = message.text.strip()
     
-    # Создаем пользователя, если его нет
-    if user_id not in users_db:
-        users_db[user_id] = {'username': '', 'first_name': '', 'state': 'idle', 'temp_data': {}}
+    if "Тренировка" in text or "🏋️" in text:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Д1 — Ноги/ягодицы", callback_data="day_Д1"))
+        markup.add(types.InlineKeyboardButton("Д2 — Спина/плечи", callback_data="day_Д2"))
+        bot.send_message(message.chat.id, "Выбери день тренировки:", reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, "Раздел в разработке 🛠 Используй кнопки меню.", reply_markup=main_keyboard())
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    user_id = call.from_user.id
     
-    user = users_db[user_id]
-    
-    # Отвечаем на callback
-    answer_callback(callback_query_id)
-    
-    # Обработка callback данных
-    if data.startswith('day_'):
-        day = data.replace('day_', '')
-        exercises = program_db.get(day, [])
-        if not exercises:
-            edit_message_text(chat_id, message_id, '❌ Программа пуста.')
+    # Пользователь выбрал день тренировки
+    if call.data.startswith("day_"):
+        day = call.data.replace("day_", "")
+        program = get_program_from_sheet(day)
+        
+        if not program:
+            bot.answer_callback_query(call.id, "Программа для этого дня пуста!")
             return
+            
+        active_workouts[user_id] = {'day': day, 'program': program, 'done': []}
         
-        user['state'] = 'workout_active'
-        user['temp_data'] = {'day': day, 'done': []}
-        edit_message_text(chat_id, message_id, f'🏋️ {day}\n\nОтмечай выполненные:', exercises_inline(day, exercises, []))
-        return
-    
-    if data.startswith('ex_'):
-        parts = data.split('_')
-        day = parts[1]
-        idx = int(parts[2])
-        exercises = program_db.get(day, [])
-        temp = user.get('temp_data', {})
-        done = temp.get('done', [])
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.id,
+            text=f"🏋️ **Тренировка: {day}**\nОтмечай выполненные упражнения:",
+            parse_mode="Markdown",
+            reply_markup=workout_keyboard(user_id)
+        )
         
-        if idx not in done:
-            done.append(idx)
-        
-        user['temp_data'] = {'day': day, 'done': done}
-        
-        if len(done) >= len(exercises):
-            edit_message_text(chat_id, message_id, '✅ Все выполнены!', {'inline_keyboard': []})
-            save_workout(user_id, day, True)
-            send_message(chat_id, '🏁 Тренировка завершена!\n\nКак самочувствие?', mood_inline())
+    # Пользователь нажал на упражнение
+    elif call.data.startswith("ex_"):
+        if user_id not in active_workouts:
+            bot.answer_callback_query(call.id, "Тренировка не найдена. Начни заново.")
             return
+            
+        ex_index = int(call.data.split("_")[1])
+        done_list = active_workouts[user_id]['done']
         
-        caption = f'🏋️ {day}\nГотово: {len(done)}/{len(exercises)}'
-        edit_message_text(chat_id, message_id, caption, exercises_inline(day, exercises, done))
-        return
-    
-    if data.startswith('finish_'):
-        day = data.replace('finish_', '')
-        temp = user.get('temp_data', {})
-        done = temp.get('done', [])
-        exercises = program_db.get(day, [])
-        
-        if len(done) >= len(exercises):
-            edit_message_text(chat_id, message_id, '✅ Завершено!', {'inline_keyboard': []})
-            save_workout(user_id, day, True)
-            send_message(chat_id, '🏁 Хорошая работа!\nКак самочувствие?', mood_inline())
+        if ex_index in done_list:
+            done_list.remove(ex_index) # Убрать галочку
         else:
-            answer_callback(callback_query_id, 'Сначала отметь все!')
-        return
-    
-    if data.startswith('mood_'):
-        mood = data.replace('mood_', '')
-        user['state'] = 'waiting_energy'
-        user['temp_data']['mood'] = mood
-        edit_message_text(chat_id, message_id, f'Настроение: {mood}\nЭнергия 1–10:', energy_inline())
-        return
-    
-    if data.startswith('energy_'):
-        energy = int(data.replace('energy_', ''))
-        mood = user.get('temp_data', {}).get('mood', 'не указано')
-        save_mood(user_id, mood, energy)
-        user['state'] = 'idle'
-        user['temp_data'] = {}
-        edit_message_text(chat_id, message_id, f'✅ Сохранено: {mood}, энергия {energy}/10', main_menu_keyboard(is_admin))
-        return
-    
-    if data == 'meas_before':
-        user['state'] = 'waiting_measurements_before'
-        edit_message_text(chat_id, message_id, 'Введи "Было": вес,талия,бедра,грудь,нога,рука')
-        return
-    
-    if data == 'meas_after':
-        user['state'] = 'waiting_measurements_after'
-        edit_message_text(chat_id, message_id, 'Введи "Стало": вес,талия,бедра,грудь,нога,рука')
-        return
-    
-    if data == 'meas_diff':
-        edit_message_text(chat_id, message_id, '📊 Разница (в разработке)', measurements_inline())
-        return
-    
-    if data == 'nopower_postpone':
-        edit_message_text(chat_id, message_id, '➡️ Перенесено!', main_menu_keyboard(is_admin))
-        return
-    
-    if data == 'nopower_skip':
-        save_workout(user_id, 'Пропуск', False)
-        edit_message_text(chat_id, message_id, '❌ Пропуск.', main_menu_keyboard(is_admin))
-        return
-    
-    if data == 'nopower_light':
-        edit_message_text(chat_id, message_id, '💡 Легкая версия:\n• Присед 2×10\n• Планка 2×30', main_menu_keyboard(is_admin))
-        return
-    
-    if data.startswith('lib_'):
-        cat = data.replace('lib_', '')
-        items = library_db.get(cat, [])
-        txt = f'📚 {cat.upper()}\n\n'
-        for item in items:
-            txt += f"• {item['name']}\n{item['desc']}\n\n"
-        edit_message_text(chat_id, message_id, txt, back_inline())
-        return
-    
-    if data == 'admin_add':
-        user['state'] = 'admin_adding'
-        edit_message_text(chat_id, message_id, 'Введи: День|Название|Подходы|Повторы')
-        return
-    
-    if data == 'admin_del':
-        user['state'] = 'admin_deleting'
-        edit_message_text(chat_id, message_id, 'Введи: День|Название')
-        return
-    
-    if data.startswith('admin_edit_'):
-        day = data.replace('admin_edit_', '')
-        if day in program_db:
-            program_db[day] = []
-        user['state'] = 'admin_adding'
-        edit_message_text(chat_id, message_id, f'Программа {day} очищена. Введи новые упражнения:')
-        return
-    
-    if data in ['admin_back', 'main_menu']:
-        edit_message_text(chat_id, message_id, 'Главное меню', main_menu_keyboard(is_admin))
-        return
+            done_list.append(ex_index) # Поставить галочку
+            
+        active_workouts[user_id]['done'] = done_list
+        
+        # Обновляем кнопки
+        day = active_workouts[user_id]['day']
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.id,
+            text=f"🏋️ **Тренировка: {day}**\nОтмечай выполненные упражнения:",
+            parse_mode="Markdown",
+            reply_markup=workout_keyboard(user_id)
+        )
+        
+    # Пользователь завершил тренировку
+    elif call.data == "finish":
+        if user_id not in active_workouts:
+            bot.answer_callback_query(call.id, "Нет активной тренировки.")
+            return
+            
+        workout = active_workouts.pop(user_id)
+        day = workout['day']
+        is_full = len(workout['done']) == len(workout['program'])
+        status = "Полностью" if is_full else "Частично"
+        
+        # Запись в историю
+        if sh:
+            try:
+                date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                sh.worksheet("History").append_row([date_str, str(user_id), call.from_user.first_name, day, status])
+            except Exception as e:
+                print("Ошибка записи истории:", e)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.id,
+            text=f"🏁 **Тренировка {day} завершена!**\nСтатус: {status}\n\nРезультат записан в дневник. Ты молодец! 🔥",
+            parse_mode="Markdown"
+        )
 
-# ==========================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ==========================================
-def save_workout(user_id, day, completed):
-    from datetime import datetime
-    date_str = datetime.now().strftime('%d.%m.%Y')
-    
-    if user_id not in history_db:
-        history_db[user_id] = []
-    
-    history_db[user_id].append({
-        'date': date_str,
-        'day': day,
-        'completed': completed
-    })
-
-def save_mood(user_id, mood, energy):
-    from datetime import datetime
-    date_str = datetime.now().strftime('%d.%m.%Y')
-    
-    if user_id not in mood_db:
-        mood_db[user_id] = []
-    
-    mood_db[user_id].append({
-        'date': date_str,
-        'mood': mood,
-        'energy': energy
-    })
-
-def save_measurements(user_id, type_, values):
-    # Пока просто сохраняем в память
-    print(f"Measurements saved for user {user_id}: {type_} - {values}")
-
-# ==========================================
-# WEBHOOK ENDPOINT
-# ==========================================
-@app.route('/', methods=['POST'])
+# ================= WEBHOOK И СЕРВЕР =================
+@app.route('/' + TOKEN, methods=['POST'])
 def webhook():
-    try:
-        update = request.get_json()
-        
-        if 'message' in update:
-            handle_message(update['message'])
-        elif 'callback_query' in update:
-            handle_callback(update['callback_query'])
-        
-        return jsonify({'ok': True}), 200
-    except Exception as e:
-        print(f"Error processing update: {e}")
-        return jsonify({'ok': True}), 200  # Всегда возвращаем 200
+    json_str = request.get_data().decode('UTF-8')
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return 'OK', 200
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    return 'Bot is running!', 200
+    return "Фитнес-бот успешно работает и подключен к таблицам! ✅"
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
