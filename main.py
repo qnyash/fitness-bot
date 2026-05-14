@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import telebot
 from telebot import types
 from flask import Flask, request
@@ -12,6 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 ADMIN_ID = 466924747
+CHANNEL_ID = -1003457894028
 
 # ================= ПОДКЛЮЧЕНИЕ К GOOGLE SHEETS =================
 gc = None
@@ -54,6 +56,7 @@ def init_db():
         ws = sh.add_worksheet(title="Motivation", rows=100, cols=1)
         ws.append_row(['text'])
         ws.append_row(['Хватит откладывать! Время действовать! 🔥'])
+        ws.append_row(['Каждая тренировка делает тебя лучше! 🍑'])
 
 init_db()
 
@@ -118,8 +121,7 @@ def start(message):
                 ws.append_row([str(user_id), message.from_user.first_name, datetime.now().strftime("%Y-%m-%d %H:%M")])
         except: pass
     
-    # НОВОЕ ПРИВЕТСТВИЕ:
-    welcome_text = f"Привет, {message.from_user.first_name}! 🤸\nГотова растрясти булочки?"
+    welcome_text = f"Привет, {message.from_user.first_name}! 🤸‍♀️\nГотова растрясти булочки?"
     bot.send_message(message.chat.id, welcome_text, reply_markup=main_keyboard(user_id))
 
 @bot.message_handler(func=lambda m: True)
@@ -170,9 +172,11 @@ def handle_text(message):
         
     elif "Админ" in text and user_id == ADMIN_ID:
         url = os.environ.get('SPREADSHEET_URL')
-        markup = types.InlineKeyboardMarkup()
+        markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("📊 Открыть базу данных", url=url))
-        bot.send_message(message.chat.id, "👑 Админ-панель:", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton("📣 Отправить мотивацию в канал", callback_data="admin_motivate"))
+        markup.add(types.InlineKeyboardButton("🔔 Пнуть лентяев (в личку)", callback_data="admin_remind"))
+        bot.send_message(message.chat.id, "👑 **Пульт управления ботом:**", parse_mode="Markdown", reply_markup=markup)
     else:
         bot.send_message(message.chat.id, "Используй кнопки 👇", reply_markup=main_keyboard(user_id))
 
@@ -181,7 +185,49 @@ def handle_text(message):
 def callback_query(call):
     user_id = call.from_user.id
     
-    if call.data == "nopower_postpone":
+    # --- АДМИН ПАНЕЛЬ ---
+    if call.data == "admin_motivate":
+        if user_id != ADMIN_ID: return
+        try:
+            phrases = sh.worksheet("Motivation").col_values(1)[1:]
+            if phrases:
+                bot.send_message(CHANNEL_ID, random.choice(phrases))
+                bot.answer_callback_query(call.id, "✅ Отправлено в канал!")
+            else:
+                bot.answer_callback_query(call.id, "❌ В таблице нет фраз!", show_alert=True)
+        except Exception as e:
+            bot.answer_callback_query(call.id, f"Ошибка: {e}")
+            
+    elif call.data == "admin_remind":
+        if user_id != ADMIN_ID: return
+        try:
+            users = sh.worksheet("Users").col_values(1)[1:]
+            history = sh.worksheet("History").get_all_records()
+            last_workouts = {str(r.get('user_id', '')): str(r.get('date', '')) for r in history}
+            
+            sent_count = 0
+            now = datetime.now()
+            for uid in users:
+                last_w = last_workouts.get(uid)
+                send_ping = False
+                if not last_w: send_ping = True
+                else:
+                    try:
+                        last_d = datetime.strptime(last_w, "%Y-%m-%d %H:%M")
+                        if (now - last_d).days >= 3: send_ping = True
+                    except: pass
+                
+                if send_ping:
+                    try:
+                        bot.send_message(int(uid), "Хей! 🍑 Давно не было тренировок. Пора растрясти булочки!")
+                        sent_count += 1
+                    except: pass
+            bot.answer_callback_query(call.id, f"✅ Разослано напоминаний: {sent_count}", show_alert=True)
+        except Exception as e:
+            bot.answer_callback_query(call.id, f"Ошибка: {e}")
+
+    # --- ТРЕНИРОВКИ ---
+    elif call.data == "nopower_postpone":
         bot.edit_message_text("🛋 Перенесено на завтра. Отдыхай!", call.message.chat.id, call.message.id)
     elif call.data == "nopower_skip":
         if sh:
@@ -216,6 +262,7 @@ def callback_query(call):
             except: pass
         bot.edit_message_text(f"🏁 **{day} завершена!**\nСтатус: {status}\nЗаписано в дневник! 🔥", call.message.chat.id, call.message.id, parse_mode="Markdown")
 
+    # --- БИБЛИОТЕКА ---
     elif call.data.startswith("libcat_"):
         cat = call.data.replace("libcat_", "")
         exs = get_lib_exercises(cat)
