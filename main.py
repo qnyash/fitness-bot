@@ -135,8 +135,8 @@ def handle_text(message):
 
     if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("Д1 — Ноги/ягодицы", callback_data="day_Д1"))
-        markup.add(types.InlineKeyboardButton("Д2 — Спина/плечи", callback_data="day_Д2"))
+        markup.add(types.InlineKeyboardButton("Д1", callback_data="day_Д1"))
+        markup.add(types.InlineKeyboardButton("Д2", callback_data="day_Д2"))
         bot.send_message(message.chat.id, "Выбери день тренировки:", reply_markup=markup)
         
     elif "Прогресс" in text or "📈" in text:
