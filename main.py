@@ -864,12 +864,12 @@ def handle_text(message):
         markup = types.InlineKeyboardMarkup()
 
         markup.add(types.InlineKeyboardButton(
-            "Д1 — Ноги/ягодицы",
+            "Д1",
             callback_data="day_Д1"
         ))
 
         markup.add(types.InlineKeyboardButton(
-            "Д2 — Спина/плечи",
+            "Д2",
             callback_data="day_Д2"
         ))
 
