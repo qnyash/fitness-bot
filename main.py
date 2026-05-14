@@ -49,7 +49,11 @@ def init_db():
     if 'Library' not in worksheets:
         ws = sh.add_worksheet(title="Library", rows=100, cols=4)
         ws.append_row(['category', 'name', 'description', 'image_url'])
-        ws.append_row(['Ноги', 'Приседания', 'Спина прямая, колени за носки не выходят.', ''])
+        
+    if 'Motivation' not in worksheets:
+        ws = sh.add_worksheet(title="Motivation", rows=100, cols=1)
+        ws.append_row(['text'])
+        ws.append_row(['Хватит откладывать! Время действовать! 🔥'])
 
 init_db()
 
@@ -83,7 +87,7 @@ def main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.row("🏋️ Тренировка")
     markup.row("📏 Замеры", "📅 История")
-    markup.row("📈 Прогресс", "📚 Библиотека") # ТУТ ИСПРАВЛЕН ЭМОДЗИ
+    markup.row("📈 Прогресс", "📚 Библиотека")
     markup.row("😩 Сегодня нет сил")
     if user_id == ADMIN_ID:
         markup.row("⚙️ Админ-панель")
@@ -113,7 +117,10 @@ def start(message):
             if str(user_id) not in ws.col_values(1):
                 ws.append_row([str(user_id), message.from_user.first_name, datetime.now().strftime("%Y-%m-%d %H:%M")])
         except: pass
-    bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}! 👋", reply_markup=main_keyboard(user_id))
+    
+    # НОВОЕ ПРИВЕТСТВИЕ:
+    welcome_text = f"Привет, {message.from_user.first_name}! 🤸\nГотова растрясти булочки?"
+    bot.send_message(message.chat.id, welcome_text, reply_markup=main_keyboard(user_id))
 
 @bot.message_handler(func=lambda m: True)
 def handle_text(message):
@@ -135,8 +142,8 @@ def handle_text(message):
 
     if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("Д1", callback_data="day_Д1"))
-        markup.add(types.InlineKeyboardButton("Д2", callback_data="day_Д2"))
+        markup.add(types.InlineKeyboardButton("Д1 — Ноги/ягодицы", callback_data="day_Д1"))
+        markup.add(types.InlineKeyboardButton("Д2 — Спина/плечи", callback_data="day_Д2"))
         bot.send_message(message.chat.id, "Выбери день тренировки:", reply_markup=markup)
         
     elif "Прогресс" in text or "📈" in text:
@@ -209,7 +216,6 @@ def callback_query(call):
             except: pass
         bot.edit_message_text(f"🏁 **{day} завершена!**\nСтатус: {status}\nЗаписано в дневник! 🔥", call.message.chat.id, call.message.id, parse_mode="Markdown")
 
-    # ----- ЛОГИКА БИБЛИОТЕКИ -----
     elif call.data.startswith("libcat_"):
         cat = call.data.replace("libcat_", "")
         exs = get_lib_exercises(cat)
@@ -231,8 +237,7 @@ def callback_query(call):
         
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("↩️ Назад к списку", callback_data=f"libcat_{cat}"))
-        
-        bot.delete_message(call.message.chat.id, call.message.id) # Удаляем меню
+        bot.delete_message(call.message.chat.id, call.message.id)
         
         if img and img.startswith("http"):
             try: bot.send_photo(call.message.chat.id, img, caption=text, parse_mode="Markdown", reply_markup=markup)
