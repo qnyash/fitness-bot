@@ -174,7 +174,7 @@ def get_program_from_sheet(day):
     try:
         ws = sh.worksheet("Program")
         records = ws.get_all_records()
-        # Исправлено: убираем лишние пробелы при сравнении
+        # Ищем точное совпадение дня (убираем пробелы)
         return [r for r in records if str(r.get("day", "")).strip() == str(day).strip()]
     except:
         return []
@@ -252,7 +252,14 @@ def get_workout_text(user_id):
     if not workout:
         return ""
 
-    return f"🏋️ **Тренировка: {workout['day']}**\nОтмечай подходы:"
+    day_name = workout['day']
+    # Если это режим "СилыНет", меняем заголовок
+    if day_name == "СилыНет":
+        title = "😩 Режим: Нет сил"
+    else:
+        title = f"🏋️ **Тренировка: {day_name}**"
+
+    return f"{title}\nОтмечай выполненные:"
 
 
 def workout_keyboard(user_id):
@@ -264,6 +271,9 @@ def workout_keyboard(user_id):
 
     program = workout["program"]
     completed_sets = workout.get("completed_sets", {})
+    
+    # Проверяем, это режим "СилыНет" или обычная тренировка
+    is_no_power_mode = (workout['day'] == "СилыНет")
 
     for i, ex in enumerate(program):
         sets_count = safe_int(ex.get("sets", 1), 1)
@@ -273,26 +283,60 @@ def workout_keyboard(user_id):
         status = "✅" if done_count == sets_count else "⬜"
         exercise_name = ex.get("exercise", "Упражнение")
 
+        # Кнопка-заголовок упражнения
+        # Для режима "Нет сил" пишем (0/1), (1/1) и т.д., но без подходов в интерфейсе
+        count_str = f"({done_count}/{sets_count})"
+        
         markup.row(types.InlineKeyboardButton(
-            f"{status} {exercise_name} ({done_count}/{sets_count})",
+            f"{status} {exercise_name} {count_str}",
             callback_data=f"exinfo_{i}"
         ))
 
         row_buttons = []
 
-        for s in range(sets_count):
-            is_done = s in completed_sets.get(i, [])
+        if is_no_power_mode:
+            # РЕЖИМ "НЕТ СИЛ": Одна кнопка на всё упражнение
+            # Если всего 1 подход (или даже если больше, но мы хотим одну кнопку),
+            # делаем одну кнопку "Выполнить"
+            # Логика: если упражнение сделано (все подходы), то 👍, иначе ⚪
+            # Но так как это одно действие, считаем выполнение по индексу 0
+            
+            # Для простоты: берем первый подход как маркер выполнения всего упражнения
+            is_done = 0 in completed_sets.get(i, [])
+            
             label = "👍" if is_done else "⚪"
             
-            # ИЗМЕНЕНИЕ ЗДЕСЬ: 
-            # Было: f"{label} {sets_count}x{reps}" (напр. ⚪ 3x15)
-            # Стало: f"{label} {s+1}x{reps}" (напр. ⚪ 1x15, ⚪ 2x15...)
-            btn_text = f"{label} {s+1}x{reps}"
-
+            # Текст кнопки: если выполнено - "Готово", иначе "Выполнить"
+            btn_text = "👍 Готово" if is_done else "⚪ Выполнить"
+            
+            # Callback data: set_i_0 (как первый подход)
             row_buttons.append(types.InlineKeyboardButton(
                 btn_text,
-                callback_data=f"set_{i}_{s}"
+                callback_data=f"set_{i}_0"
             ))
+            
+            # Если подходов больше 1, но мы хотим одну кнопку, можно скрыть остальные
+            # Но логика выше уже обрабатывает 0 индекс. 
+            # Если пользователь хочет выполнять по одному подходу в режиме "нет сил",
+            # то оставляем как есть. Но по запросу нужна одна кнопка на упражнение.
+            # Поэтому мы добавляем ТОЛЬКО одну кнопку, игнорируя количество подходов из таблицы.
+            # (Но сохраним логику завершения: упражнение завершено, если сделан хотя бы один подход? 
+            # Или нужно сделать все? Обычно в режиме "нет сил" 1 раз = достаточно)
+            # Допустим, для режима "нет сил" 1 подход = всё упражнение выполнено.
+            
+        else:
+            # ОБЫЧНАЯ ТРЕНИРОВКА: Все подходы отдельно
+            for s in range(sets_count):
+                is_done = s in completed_sets.get(i, [])
+                label = "👍" if is_done else "⚪"
+                
+                # Текст: 1x15, 2x15...
+                btn_text = f"{label} {s+1}x{reps}"
+
+                row_buttons.append(types.InlineKeyboardButton(
+                    btn_text,
+                    callback_data=f"set_{i}_{s}"
+                ))
 
         markup.row(*row_buttons)
 
@@ -827,23 +871,17 @@ def handle_text(message):
         )
 
     elif "нет сил" in text:
-        markup = types.InlineKeyboardMarkup(row_width=1)
+        # Теперь эта кнопка запускает специальную тренировку "СилыНет"
+        # Никакого выбора "перенести/пропустить" здесь нет, сразу идет программа
+        markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
-            "➡️ Перенести",
-            callback_data="nopower_postpone"
+            "💡 Режим: Нет сил (Легкая версия)",
+            callback_data="day_СилыНет"
         ))
-        markup.add(types.InlineKeyboardButton(
-            "❌ Пропустить",
-            callback_data="nopower_skip"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "💡 Легкая версия",
-            callback_data="day_Легкая"
-        ))
-
+        
         bot.send_message(
             message.chat.id,
-            "Слушай своё тело. Что будем делать?",
+            "😩 Режим для тех, кто устал. Выполняй лёгкие упражнения:",
             reply_markup=markup
         )
 
@@ -1340,34 +1378,9 @@ def callback_query(call):
         )
 
 
-    # ---------- НЕТ СИЛ ----------
-
-    elif data == "nopower_postpone":
-        bot.edit_message_text(
-            "🛋 Перенесено на завтра. Отдыхай!",
-            chat_id,
-            msg_id
-        )
-
-    elif data == "nopower_skip":
-        if sh:
-            try:
-                sh.worksheet("History").append_row([
-                    now_str(),
-                    str(user_id),
-                    call.from_user.first_name,
-                    "Пропуск",
-                    "Нет сил"
-                ])
-            except:
-                pass
-
-        bot.edit_message_text(
-            "❌ Пропущено. Записано в дневник.",
-            chat_id,
-            msg_id
-        )
-
+    # ---------- НЕТ СИЛ (ТЕПЕРЬ ЭТО РЕЖИМ ТРЕНИРОВКИ) ----------
+    
+    # Старые обработчики переноса/пропуска удалены, теперь всё работает через day_СилыНет
 
     # ---------- ТРЕНИРОВКИ ----------
 
@@ -1400,7 +1413,7 @@ def callback_query(call):
     elif data.startswith("exinfo_"):
         bot.answer_callback_query(
             call.id,
-            "Нажимай на подходы ниже 👇"
+            "Нажимай на кнопку выполнения ниже 👇"
         )
 
     elif data.startswith("set_"):
@@ -1438,16 +1451,36 @@ def callback_query(call):
         workout = active_workouts.pop(user_id)
         completed_sets = workout.get("completed_sets", {})
         program = workout["program"]
-
+        day_name = workout["day"]
+        
         all_done = True
 
         for i in range(len(program)):
             sets_count = safe_int(program[i].get("sets", 1), 1)
-            if len(completed_sets.get(i, [])) != sets_count:
-                all_done = False
+            # Если это режим "СилыНет", то 1 подход = полное выполнение упражнения
+            # Но в коде мы сохраняем все подходы.
+            # Если пользователь сделал хотя бы 1 подход в режиме "нет сил", считаем упражнение полным?
+            # Для простоты: считаем, что упражнение выполнено, если выполнены ВСЕ подходы, указанных в таблице.
+            # Но в режиме "нет сил" мы показали только одну кнопку (индекс 0).
+            # Значит, если в таблице 1 подход, то всё ок. 
+            # Если в таблице указано 100 подходов (как в примере пользователя), но мы показали 1 кнопку,
+            # то пользователь может выполнить 1/100.
+            # Чтобы считать упражнение "выполненным" в режиме "СилыНет" при нажатии одной кнопки,
+            # нужно проверить, что index 0 выполнен.
+            
+            if day_name == "СилыНет":
+                 # В режиме нет сил: если выполнена хотя бы одна кнопка (индекс 0), считаем упражнение выполненным полностью?
+                 # Или всё же проверяем все подходы? 
+                 # Давайте будем честны: если пользователь нажал кнопку, он выполнил упражнение.
+                 # Поэтому в режиме "СилыНет" достаточно наличия 0 в списке.
+                 if 0 not in completed_sets.get(i, []):
+                     all_done = False
+            else:
+                 # Обычная тренировка: должны быть все подходы
+                 if len(completed_sets.get(i, [])) != sets_count:
+                     all_done = False
                 break
 
-        day = workout["day"]
         status = "Полностью" if all_done else "Частично"
 
         if sh:
@@ -1456,14 +1489,14 @@ def callback_query(call):
                     now_str(),
                     str(user_id),
                     call.from_user.first_name,
-                    day,
+                    day_name,
                     status
                 ])
             except:
                 pass
 
         bot.edit_message_text(
-            f"🏁 **{day} завершена!**\n"
+            f"🏁 **{day_name} завершена!**\n"
             f"Статус: {status}\n"
             f"Записано в дневник! 🔥",
             chat_id,
