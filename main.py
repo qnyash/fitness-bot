@@ -253,13 +253,12 @@ def get_workout_text(user_id):
         return ""
 
     day_name = workout['day']
-    # Если это режим "СилыНет", меняем заголовок
+    
+    # Заголовок для режима "Нет сил"
     if day_name == "СилыНет":
-        title = "😩 Режим: Нет сил"
+        return "😩 **Режим: Нет сил**\nОтмечай выполненные:"
     else:
-        title = f"🏋️ **Тренировка: {day_name}**"
-
-    return f"{title}\nОтмечай выполненные:"
+        return f"🏋️ **Тренировка: {day_name}**\nОтмечай подходы:"
 
 
 def workout_keyboard(user_id):
@@ -272,56 +271,35 @@ def workout_keyboard(user_id):
     program = workout["program"]
     completed_sets = workout.get("completed_sets", {})
     
-    # Проверяем, это режим "СилыНет" или обычная тренировка
+    # Проверяем режим
     is_no_power_mode = (workout['day'] == "СилыНет")
 
     for i, ex in enumerate(program):
-        sets_count = safe_int(ex.get("sets", 1), 1)
-        reps = ex.get("reps", "0")
-
-        done_count = len(completed_sets.get(i, []))
-        status = "✅" if done_count == sets_count else "⬜"
         exercise_name = ex.get("exercise", "Упражнение")
-
-        # Кнопка-заголовок упражнения
-        count_str = f"({done_count}/{sets_count})"
         
+        # Определяем состояние упражнения (выполнено или нет)
+        # Для режима "Нет сил" считаем выполненным, если индекс 0 выполнен
+        # Для обычной тренировки проверяем все подходы (хотя здесь мы просто генерируем кнопку одного действия)
+        
+        is_done = False
+        
+        if is_no_power_mode:
+            is_done = 0 in completed_sets.get(i, [])
+        else:
+            sets_count = safe_int(ex.get("sets", 1), 1)
+            done_count = len(completed_sets.get(i, []))
+            is_done = (done_count == sets_count)
+
+        # Текст кнопки: Галочка + Название
+        label = "✅ " + exercise_name if is_done else exercise_name
+        
+        # Одна кнопка на упражнение
         markup.row(types.InlineKeyboardButton(
-            f"{status} {exercise_name} {count_str}",
-            callback_data=f"exinfo_{i}"
+            label,
+            callback_data=f"toggle_{i}"
         ))
 
-        row_buttons = []
-
-        if is_no_power_mode:
-            # РЕЖИМ "НЕТ СИЛ": Одна кнопка на всё упражнение
-            
-            is_done = 0 in completed_sets.get(i, [])
-            
-            label = "👍" if is_done else "⚪"
-            
-            btn_text = "👍 Готово" if is_done else "⚪ Выполнить"
-            
-            row_buttons.append(types.InlineKeyboardButton(
-                btn_text,
-                callback_data=f"set_{i}_0"
-            ))
-            
-        else:
-            # ОБЫЧНАЯ ТРЕНИРОВКА: Все подходы отдельно
-            for s in range(sets_count):
-                is_done = s in completed_sets.get(i, [])
-                label = "👍" if is_done else "⚪"
-                
-                btn_text = f"{label} {s+1}x{reps}"
-
-                row_buttons.append(types.InlineKeyboardButton(
-                    btn_text,
-                    callback_data=f"set_{i}_{s}"
-                ))
-
-        markup.row(*row_buttons)
-
+    # Кнопки завершения
     markup.add(types.InlineKeyboardButton(
         "🏁 Завершить тренировку",
         callback_data="finish"
@@ -853,15 +831,24 @@ def handle_text(message):
         )
 
     elif "нет сил" in text:
-        markup = types.InlineKeyboardMarkup()
+        # Показываем меню выбора действий
+        markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "💡 Режим: Нет сил (Легкая версия)",
             callback_data="day_СилыНет"
         ))
-        
+        markup.add(types.InlineKeyboardButton(
+            "➡️ Перенести",
+            callback_data="nopower_postpone"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "❌ Пропустить",
+            callback_data="nopower_skip"
+        ))
+
         bot.send_message(
             message.chat.id,
-            "😩 Режим для тех, кто устал. Выполняй лёгкие упражнения:",
+            "😩 Слушай своё тело. Что будем делать?",
             reply_markup=markup
         )
 
@@ -1358,7 +1345,46 @@ def callback_query(call):
         )
 
 
-    # ---------- ТРЕНИРОВКИ ----------
+    # ---------- НЕТ СИЛ (ДЕЙСТВИЯ) ----------
+    
+    elif data == "nopower_postpone":
+        if sh:
+            try:
+                sh.worksheet("History").append_row([
+                    now_str(),
+                    str(user_id),
+                    call.from_user.first_name,
+                    "Перенос",
+                    "Нет сил"
+                ])
+            except:
+                pass
+        bot.edit_message_text(
+            "➡️ Тренировка перенесена на завтра.",
+            chat_id,
+            msg_id
+        )
+
+    elif data == "nopower_skip":
+        if sh:
+            try:
+                sh.worksheet("History").append_row([
+                    now_str(),
+                    str(user_id),
+                    call.from_user.first_name,
+                    "Пропуск",
+                    "Нет сил"
+                ])
+            except:
+                pass
+        bot.edit_message_text(
+            "❌ Тренировка пропущена.",
+            chat_id,
+            msg_id
+        )
+
+
+    # ---------- ТРЕНИРОВКИ (ВКЛ. РЕЖИМ НЕТ СИЛ) ----------
 
     elif data.startswith("day_"):
         day = data.replace("day_", "")
@@ -1386,29 +1412,21 @@ def callback_query(call):
             reply_markup=workout_keyboard(user_id)
         )
 
-    elif data.startswith("exinfo_"):
-        bot.answer_callback_query(
-            call.id,
-            "Нажимай на кнопку выполнения ниже 👇"
-        )
-
-    elif data.startswith("set_"):
+    elif data.startswith("toggle_"):
+        # Обработка переключения галочки для упражнения
         if user_id not in active_workouts:
             return
 
-        parts = data.split("_")
-        ex_idx = int(parts[1])
-        set_idx = int(parts[2])
-
+        ex_idx = int(data.split("_")[1])
         completed_sets = active_workouts[user_id].get("completed_sets", {})
 
+        # Если упражнение еще не отмечено
         if ex_idx not in completed_sets:
-            completed_sets[ex_idx] = []
-
-        if set_idx in completed_sets[ex_idx]:
-            completed_sets[ex_idx].remove(set_idx)
+            completed_sets[ex_idx] = [0] # Помечаем как выполненное (флаг 0)
         else:
-            completed_sets[ex_idx].append(set_idx)
+            # Если уже отмечено, удаляем отметку
+            if 0 in completed_sets[ex_idx]:
+                del completed_sets[ex_idx]
 
         active_workouts[user_id]["completed_sets"] = completed_sets
 
@@ -1430,17 +1448,17 @@ def callback_query(call):
         day_name = workout["day"]
         
         all_done = True
+        is_no_power_mode = (day_name == "СилыНет")
 
         for i in range(len(program)):
-            sets_count = safe_int(program[i].get("sets", 1), 1)
-            
-            if day_name == "СилыНет":
-                # В режиме "нет сил": если выполнена хотя бы одна кнопка (индекс 0), считаем упражнение выполненным
-                if 0 not in completed_sets.get(i, []):
+            if is_no_power_mode:
+                # В режиме "нет сил" проверяем наличие флага 0
+                if i not in completed_sets:
                     all_done = False
             else:
-                # Обычная тренировка: должны быть все подходы
-                if len(completed_sets.get(i, [])) != sets_count:
+                # Для обычных тренировок проверяем количество подходов (если нужно)
+                # Сейчас в обычной логике тоже одна кнопка, так что проверяем наличие ключа
+                if i not in completed_sets:
                     all_done = False
             
             if not all_done:
