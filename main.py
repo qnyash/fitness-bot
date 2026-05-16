@@ -88,7 +88,7 @@ def get_workout_text(user_id):
     for i, ex in enumerate(workout['program']):
         sets_count = int(ex.get('sets', 1))
         done_count = len(completed_sets.get(i, []))
-        # Зеленая галочка, если все подходы сделаны
+        # Зеленая галочка для упражнения, если все подходы сделаны
         status = "✅" if done_count == sets_count else "⬜" 
         text += f"{status} **{ex.get('exercise', 'Упр')}** ({done_count}/{sets_count})\n"
     return text
@@ -107,10 +107,10 @@ def workout_keyboard(user_id):
         row = []
         for s in range(sets_count):
             is_done = s in completed_sets.get(i, [])
-            # Салют вместо галочки для подходов
-            label = "🫡" if is_done else f"{s+1}️⃣" 
+            # Белый круг ⚪ для невыполненного, палец вверх 👍 для выполненного
+            label = "👍" if is_done else "⚪" 
             row.append(types.InlineKeyboardButton(f"{label} {sets_count}x{reps}", callback_data=f"set_{i}_{s}"))
-        markup.row(*row) # Добавляем подходы в одну строку
+        markup.row(*row) 
 
     markup.add(types.InlineKeyboardButton("🏁 Завершить тренировку", callback_data="finish"))
     return markup
@@ -301,7 +301,7 @@ def callback_query(call):
             bot.send_photo(chat_id, img, caption="Твой график веса 📈🍑")
         except Exception as e: bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
 
-    # --- ТРЕНИРОВКИ (НОВАЯ ЛОГИКА С ПОДХОДАМИ) ---
+    # --- ТРЕНИРОВКИ (ФИНАЛЬНАЯ ВЕРСИЯ С КРУЖКАМИ И ПАЛЬЦАМИ) ---
     elif data == "nopower_postpone": bot.edit_message_text("🛋 Перенесено на завтра. Отдыхай!", chat_id, msg_id)
     elif data == "nopower_skip":
         if sh:
@@ -312,7 +312,6 @@ def callback_query(call):
     elif data.startswith("day_"):
         day = data.replace("day_", ""); program = get_program_from_sheet(day)
         if not program: bot.answer_callback_query(call.id, f"Программа '{day}' пуста!"); return
-        # Инициализируем пустой словарь выполненных подходов
         active_workouts[user_id] = {'day': day, 'program': program, 'completed_sets': {}}
         text = get_workout_text(user_id)
         bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
@@ -328,9 +327,9 @@ def callback_query(call):
             completed_sets[ex_idx] = []
 
         if set_idx in completed_sets[ex_idx]:
-            completed_sets[ex_idx].remove(set_idx) # Снять галочку
+            completed_sets[ex_idx].remove(set_idx) 
         else:
-            completed_sets[ex_idx].append(set_idx) # Поставить галочку
+            completed_sets[ex_idx].append(set_idx) 
 
         active_workouts[user_id]['completed_sets'] = completed_sets
         text = get_workout_text(user_id)
