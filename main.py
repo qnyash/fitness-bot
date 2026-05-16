@@ -1019,4 +1019,4 @@ def callback_query(call):
             plt.title("Динамика веса тела (кг)", fontsize=14)
             plt.xlabel("Дата")
             plt.ylabel("Вес")
-                        plt.grid(True, linestyle="--", alpha=0.6)
+            plt.grid(True, linestyle="--", alpha=0.6)
