@@ -550,7 +550,7 @@ def gym_weight_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" в text:
+    if "Отмена" in text:
         gym_temp.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -698,7 +698,7 @@ def handle_text(message):
     if is_menu_button(text):
         reset_input_states(user_id)
 
-    if "Тренировка" в text or "🏋️" в text:
+    if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
             "Д1",
@@ -715,7 +715,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Замеры" в text or "📏" в text:
+    elif "Замеры" in text or "📏" в text:
         meas_temp[user_id] = {"step": "weight"}
 
         bot.send_message(
@@ -724,7 +724,7 @@ def handle_text(message):
             reply_markup=main_keyboard(user_id)
         )
 
-    elif "История" в text or "📅" в text:
+    elif "История" in text or "📅" в text:
         if not sh:
             bot.send_message(message.chat.id, "История недоступна.")
             return
@@ -763,7 +763,7 @@ def handle_text(message):
         except:
             bot.send_message(message.chat.id, "Не смогла загрузить историю 😢")
 
-    elif "Прогресс" в text or "📈" в text:
+    elif "Прогресс" in text or "📈" в text:
         markup = types.InlineKeyboardMarkup(row_width=1)
 
         markup.add(types.InlineKeyboardButton(
@@ -797,7 +797,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "КБЖУ" в text or "🥗" в text or "🧮" в text or "Калькулятор" в text:
+    elif "КБЖУ" in text or "🥗" в text or "🧮" in text or "Калькулятор" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "➕ Новый расчёт",
@@ -815,7 +815,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Библиотека" в text or "📚" в text:
+    elif "Библиотека" в text or "📚" in text:
         cats = get_lib_categories()
 
         if not cats:
@@ -839,10 +839,10 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "нет сил" в text:
+    elif "нет сил" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
-            "💡 Режим: Нет сил (Легкая версия)",
+            "💡 Легкая версия",
             callback_data="day_СилыНет"
         ))
         markup.add(types.InlineKeyboardButton(
@@ -860,7 +860,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Админ" в text and user_id == ADMIN_ID:
+    elif "Админ" in text and user_id == ADMIN_ID:
         url = os.environ.get("SPREADSHEET_URL")
 
         markup = types.InlineKeyboardMarkup(row_width=1)
