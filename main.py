@@ -62,6 +62,13 @@ def init_db():
     if "Program" not in worksheets:
         ws = sh.add_worksheet(title="Program", rows=100, cols=5)
         ws.append_row(["day", "exercise", "sets", "reps"])
+        # Добавляем упражнения для режима "Нет сил"
+        ws.append_rows([
+            ['СилыНет', 'Проснулись', '1', '1'],
+            ['СилыНет', 'Потянулись', '1', '1'],
+            ['СилыНет', 'Улыбнулись', '1', '1'],
+            ['СилыНет', 'Йогнулись', '1', '1']
+        ])
 
     if "History" not in worksheets:
         ws = sh.add_worksheet(title="History", rows=100, cols=5)
@@ -293,20 +300,11 @@ def workout_keyboard(user_id):
             callback_data=f"toggle_{i}"
         ))
 
-    if is_no_power_mode:
-        markup.add(types.InlineKeyboardButton(
-            "➡️ Перенести",
-            callback_data="nopower_postpone"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "❌ Пропустить",
-            callback_data="nopower_skip"
-        ))
-    else:
-        markup.add(types.InlineKeyboardButton(
-            "🏁 Завершить тренировку",
-            callback_data="finish"
-        ))
+    # Оставляем ТОЛЬКО кнопку завершения
+    markup.add(types.InlineKeyboardButton(
+        "🏁 Завершить тренировку",
+        callback_data="finish"
+    ))
 
     return markup
 
@@ -356,7 +354,7 @@ def kbzhu_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text: # ИСПРАВЛЕНО
+    if "Отмена" in text:
         kbzhu_temp.pop(user_id, None)
         bot.send_message(
             user_id,
@@ -424,7 +422,7 @@ def meas_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text: # ИСПРАВЛЕНО
+    if "Отмена" in text:
         meas_temp.pop(user_id, None)
         bot.send_message(
             user_id,
@@ -505,7 +503,7 @@ def progress_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text: # ИСПРАВЛЕНО
+    if "Отмена" in text:
         user_states[user_id] = None
         bot.send_message(
             message.chat.id,
@@ -544,7 +542,7 @@ def gym_weight_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text: # ИСПРАВЛЕНО
+    if "Отмена" in text:
         gym_temp.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -692,7 +690,7 @@ def handle_text(message):
     if is_menu_button(text):
         reset_input_states(user_id)
 
-    if "Тренировка" in text or "🏋️" in text: # ИСПРАВЛЕНО
+    if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
             "Д1",
@@ -709,7 +707,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Замеры" in text or "📏" in text: # ИСПРАВЛЕНО
+    elif "Замеры" in text or "📏" in text:
         meas_temp[user_id] = {"step": "weight"}
 
         bot.send_message(
@@ -718,7 +716,7 @@ def handle_text(message):
             reply_markup=main_keyboard(user_id)
         )
 
-    elif "История" in text or "📅" in text: # ИСПРАВЛЕНО
+    elif "История" in text or "📅" in text:
         if not sh:
             bot.send_message(message.chat.id, "История недоступна.")
             return
@@ -757,7 +755,7 @@ def handle_text(message):
         except:
             bot.send_message(message.chat.id, "Не смогла загрузить историю 😢")
 
-    elif "Прогресс" in text or "📈" in text: # ИСПРАВЛЕНО
+    elif "Прогресс" in text or "📈" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
 
         markup.add(types.InlineKeyboardButton(
@@ -791,7 +789,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text: # ИСПРАВЛЕНО
+    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "➕ Новый расчёт",
@@ -809,7 +807,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Библиотека" in text or "📚" in text: # ИСПРАВЛЕНО
+    elif "Библиотека" in text or "📚" in text:
         cats = get_lib_categories()
 
         if not cats:
@@ -833,7 +831,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "нет сил" in text: # ИСПРАВЛЕНО
+    elif "нет сил" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "💡 Режим: Нет сил (Легкая версия)",
@@ -854,7 +852,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Админ" in text and user_id == ADMIN_ID: # ИСПРАВЛЕНО
+    elif "Админ" in text and user_id == ADMIN_ID:
         url = os.environ.get("SPREADSHEET_URL")
 
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -1021,580 +1019,4 @@ def callback_query(call):
             plt.title("Динамика веса тела (кг)", fontsize=14)
             plt.xlabel("Дата")
             plt.ylabel("Вес")
-            plt.grid(True, linestyle="--", alpha=0.6)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-
-            img = io.BytesIO()
-            plt.savefig(img, format="png", dpi=100)
-            img.seek(0)
-            plt.close()
-
-            bot.send_photo(chat_id, img, caption="📊 Твой график веса тела 📈🍑")
-
-        except Exception as e:
-            bot.answer_callback_query(
-                call.id,
-                f"Ошибка: {e}",
-                show_alert=True
-            )
-
-    elif data == "prog_params":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-
-        markup.add(types.InlineKeyboardButton(
-            "⚖️ Вес тела",
-            callback_data="param_weight"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "📏 Плечи",
-            callback_data="param_shoulders"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "🍒 Грудь",
-            callback_data="param_chest"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "⌛ Талия",
-            callback_data="param_waist"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "🍑 Булки",
-            callback_data="param_butt"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "🦵 Бёдра",
-            callback_data="param_hips"
-        ))
-
-        bot.edit_message_text(
-            "📏 Выбери параметр для графика:",
-            chat_id,
-            msg_id,
-            reply_markup=markup
-        )
-
-    elif data.startswith("param_"):
-        if not sh:
-            return
-
-        param = data.replace("param_", "")
-
-        param_titles = {
-            "weight": ("Вес тела", "кг", "#FF69B4"),
-            "shoulders": ("Плечи", "см", "#1E90FF"),
-            "chest": ("Грудь", "см", "#FF1493"),
-            "waist": ("Талия", "см", "#32CD32"),
-            "butt": ("Булки", "см", "#FF8C00"),
-            "hips": ("Бёдра", "см", "#8A2BE2")
-        }
-
-        title, unit, color = param_titles.get(param, ("Параметр", "", "#FF69B4"))
-
-        try:
-            rows = sh.worksheet("Measurements").get_all_records()
-
-            dates = []
-            values = []
-
-            for row in rows:
-                if str(row.get("user_id", "")) == str(user_id):
-                    val = safe_float(row.get(param), None)
-
-                    if val is not None:
-                        dates.append(str(row.get("date", ""))[:10])
-                        values.append(val)
-
-            if not values:
-                bot.answer_callback_query(
-                    call.id,
-                    f"Нет данных для графика: {title}",
-                    show_alert=True
-                )
-                return
-
-            plt.figure(figsize=(10, 5))
-            plt.plot(
-                dates,
-                values,
-                marker="o",
-                color=color,
-                linewidth=2,
-                markersize=8
-            )
-
-            plt.title(f"Динамика: {title}", fontsize=14)
-            plt.xlabel("Дата")
-            plt.ylabel(unit)
-            plt.grid(True, linestyle="--", alpha=0.6)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-
-            img = io.BytesIO()
-            plt.savefig(img, format="png", dpi=100)
-            img.seek(0)
-            plt.close()
-
-            bot.send_photo(
-                chat_id,
-                img,
-                caption=f"📈 График: {title}"
-            )
-
-        except Exception as e:
-            bot.answer_callback_query(
-                call.id,
-                f"Ошибка: {e}",
-                show_alert=True
-            )
-
-    elif data == "gym_add":
-        gym_temp[user_id] = {
-            "mode": "add",
-            "step": "exercise"
-        }
-
-        bot.send_message(
-            chat_id,
-            "🏋️ Введи название упражнения.\nНапример: `Жим ногами`",
-            parse_mode="Markdown",
-            reply_markup=cancel_plus_menu_keyboard(user_id)
-        )
-
-    elif data == "gym_graph":
-        gym_temp[user_id] = {
-            "mode": "graph",
-            "step": "exercise"
-        }
-
-        bot.send_message(
-            chat_id,
-            "🏋️ Введи название упражнения, по которому построить график.\nНапример: `Жим ногами`",
-            parse_mode="Markdown",
-            reply_markup=cancel_plus_menu_keyboard(user_id)
-        )
-
-
-    # ---------- КБЖУ ----------
-
-    elif data == "kbzhu_new":
-        kbzhu_temp[user_id] = {}
-
-        bot.edit_message_text(
-            "🥗 **Калькулятор КБЖУ**\nВведи свой возраст (полных лет):",
-            chat_id,
-            msg_id,
-            parse_mode="Markdown"
-        )
-
-    elif data == "kbzhu_last":
-        if not sh:
-            bot.answer_callback_query(
-                call.id,
-                "Таблица не подключена",
-                show_alert=True
-            )
-            return
-
-        try:
-            rows = sh.worksheet("KBZHU").get_all_records()
-            last = None
-
-            for row in reversed(rows):
-                if str(row.get("user_id", "")) == str(user_id):
-                    last = row
-                    break
-
-            if not last:
-                bot.answer_callback_query(
-                    call.id,
-                    "У тебя пока нет предыдущих расчётов.",
-                    show_alert=True
-                )
-                return
-
-            calories_raw = str(last.get("calories", "0")).replace(",", ".")
-            calories = int(float(calories_raw)) if calories_raw else 0
-
-            protein = last.get("protein") or int((calories * 0.30) / 4)
-            fat = last.get("fat") or int((calories * 0.30) / 9)
-            carbs = last.get("carbs") or int((calories * 0.40) / 4)
-
-            msg = (
-                f"📄 **Предыдущий расчёт КБЖУ**\n\n"
-                f"📅 Дата: {last.get('date', '—')}\n"
-                f"🎯 Цель: {last.get('goal', '—')}\n"
-                f"⚙️ Активность: {last.get('activity', '—')}\n\n"
-                f"🔥 Калории: **{calories} ккал**\n"
-                f"🥩 Белки: **{protein} г**\n"
-                f"🥑 Жиры: **{fat} г**\n"
-                f"🍞 Углеводы: **{carbs} г**\n\n"
-                f"Данные расчёта:\n"
-                f"Вес: {last.get('weight', '—')} кг\n"
-                f"Рост: {last.get('height', '—')} см\n"
-                f"Возраст: {last.get('age', '—')}"
-            )
-
-            bot.send_message(
-                chat_id,
-                msg,
-                parse_mode="Markdown",
-                reply_markup=main_keyboard(user_id)
-            )
-
-        except Exception as e:
-            bot.answer_callback_query(
-                call.id,
-                f"Ошибка: {e}",
-                show_alert=True
-            )
-
-    elif data.startswith("kbzhu_act_"):
-        if user_id not in kbzhu_temp:
-            bot.answer_callback_query(
-                call.id,
-                "Начни расчёт заново.",
-                show_alert=True
-            )
-            return
-
-        parts = data.split("_")
-
-        kbzhu_temp[user_id]["activity_val"] = float(parts[2])
-        kbzhu_temp[user_id]["activity_name"] = parts[3]
-
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton(
-            "📉 Похудеть (-20%)",
-            callback_data="kbzhu_goal_0.8_Похудеть"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "⚖️ Поддержать вес",
-            callback_data="kbzhu_goal_1.0_Поддержать"
-        ))
-        markup.add(types.InlineKeyboardButton(
-            "📈 Набрать массу (+15%)",
-            callback_data="kbzhu_goal_1.15_Набрать"
-        ))
-
-        bot.send_message(
-            chat_id,
-            "Какая у тебя цель?",
-            reply_markup=markup
-        )
-
-    elif data.startswith("kbzhu_goal_"):
-        if user_id not in kbzhu_temp:
-            bot.answer_callback_query(
-                call.id,
-                "Начни расчёт заново.",
-                show_alert=True
-            )
-            return
-
-        parts = data.split("_")
-        mult = float(parts[2])
-        goal = parts[3]
-
-        u = kbzhu_temp[user_id]
-
-        bmr = (
-            (10 * u["weight"])
-            + (6.25 * u["height"])
-            - (5 * u["age"])
-            - 161
-        )
-
-        tdee = int(bmr * u["activity_val"] * mult)
-
-        protein = int((tdee * 0.30) / 4)
-        fat = int((tdee * 0.30) / 9)
-        carbs = int((tdee * 0.40) / 4)
-
-        res_text = (
-            f"🥗 **Твой расчёт КБЖУ** ({goal})\n\n"
-            f"🔥 Калории: **{tdee} ккал**\n"
-            f"🥩 Белки: **{protein} г**\n"
-            f"🥑 Жиры: **{fat} г**\n"
-            f"🍞 Углеводы: **{carbs} г**"
-        )
-
-        if sh:
-            try:
-                sh.worksheet("KBZHU").append_row([
-                    now_str(),
-                    str(user_id),
-                    u["weight"],
-                    u["height"],
-                    u["age"],
-                    u["activity_name"],
-                    tdee,
-                    goal,
-                    protein,
-                    fat,
-                    carbs
-                ])
-            except:
-                pass
-
-        kbzhu_temp.pop(user_id, None)
-
-        bot.send_message(
-            chat_id,
-            res_text,
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(user_id)
-        )
-
-
-    # ---------- НЕТ СИЛ (ДЕЙСТВИЯ) ----------
-    
-    elif data == "nopower_postpone":
-        if sh:
-            try:
-                sh.worksheet("History").append_row([
-                    now_str(),
-                    str(user_id),
-                    call.from_user.first_name,
-                    "Перенос",
-                    "Нет сил"
-                ])
-            except:
-                pass
-        bot.edit_message_text(
-            "➡️ Тренировка перенесена на завтра.",
-            chat_id,
-            msg_id
-        )
-
-    elif data == "nopower_skip":
-        if sh:
-            try:
-                sh.worksheet("History").append_row([
-                    now_str(),
-                    str(user_id),
-                    call.from_user.first_name,
-                    "Пропуск",
-                    "Нет сил"
-                ])
-            except:
-                pass
-        bot.edit_message_text(
-            "❌ Тренировка пропущена.",
-            chat_id,
-            msg_id
-        )
-
-
-    # ---------- ТРЕНИРОВКИ (ВКЛ. РЕЖИМ НЕТ СИЛ) ----------
-
-    elif data.startswith("day_"):
-        day = data.replace("day_", "")
-        program = get_program_from_sheet(day)
-
-        if not program:
-            bot.answer_callback_query(
-                call.id,
-                f"Программа '{day}' пуста!",
-                show_alert=True
-            )
-            return
-
-        active_workouts[user_id] = {
-            "day": day,
-            "program": program,
-            "completed_sets": {}
-        }
-
-        bot.edit_message_text(
-            get_workout_text(user_id),
-            chat_id,
-            msg_id,
-            parse_mode="Markdown",
-            reply_markup=workout_keyboard(user_id)
-        )
-
-    elif data.startswith("toggle_"):
-        if user_id not in active_workouts:
-            return
-
-        ex_idx = int(data.split("_")[1])
-        completed_sets = active_workouts[user_id].get("completed_sets", {})
-
-        if ex_idx not in completed_sets:
-            completed_sets[ex_idx] = [0] 
-        else:
-            if 0 in completed_sets[ex_idx]:
-                del completed_sets[ex_idx]
-
-        active_workouts[user_id]["completed_sets"] = completed_sets
-
-        bot.edit_message_text(
-            get_workout_text(user_id),
-            chat_id,
-            msg_id,
-            parse_mode="Markdown",
-            reply_markup=workout_keyboard(user_id)
-        )
-
-    elif data == "finish":
-        if user_id not in active_workouts:
-            return
-
-        workout = active_workouts.pop(user_id)
-        completed_sets = workout.get("completed_sets", {})
-        program = workout["program"]
-        day_name = workout["day"]
-        
-        all_done = True
-        is_no_power_mode = (day_name == "СилыНет")
-
-        for i in range(len(program)):
-            if is_no_power_mode:
-                if i not in completed_sets:
-                    all_done = False
-            else:
-                if i not in completed_sets:
-                    all_done = False
-            
-            if not all_done:
-                break
-
-        status = "Полностью" if all_done else "Частично"
-
-        if sh:
-            try:
-                sh.worksheet("History").append_row([
-                    now_str(),
-                    str(user_id),
-                    call.from_user.first_name,
-                    day_name,
-                    status
-                ])
-            except:
-                pass
-
-        bot.edit_message_text(
-            f"🏁 **{day_name} завершена!**\n"
-            f"Статус: {status}\n"
-            f"Записано в дневник! 🔥",
-            chat_id,
-            msg_id,
-            parse_mode="Markdown"
-        )
-
-
-    # ---------- БИБЛИОТЕКА ----------
-
-    elif data.startswith("libcat_"):
-        cat = data.replace("libcat_", "")
-        exercises = get_lib_exercises(cat)
-
-        markup = types.InlineKeyboardMarkup()
-
-        for i, ex in enumerate(exercises):
-            markup.add(types.InlineKeyboardButton(
-                ex.get("name", "Упражнение"),
-                callback_data=f"libex_{cat}_{i}"
-            ))
-
-        markup.add(types.InlineKeyboardButton(
-            "↩️ Назад",
-            callback_data="lib_back"
-        ))
-
-        bot.edit_message_text(
-            f"📚 **Категория: {cat}**\nВыбери упражнение:",
-            chat_id,
-            msg_id,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
-
-    elif data.startswith("libex_"):
-        parts = data.split("_")
-        cat = parts[1]
-        idx = int(parts[2])
-
-        exercises = get_lib_exercises(cat)
-        ex = exercises[idx]
-
-        name = ex.get("name", "")
-        desc = ex.get("description", "")
-        img = str(ex.get("image_url", "")).strip()
-
-        text = f"🏋️ **{name}**\n\n{desc}"
-
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(
-            "↩️ Назад",
-            callback_data=f"libcat_{cat}"
-        ))
-
-        try:
-            bot.delete_message(chat_id, msg_id)
-        except:
-            pass
-
-        if img and img.startswith("http"):
-            try:
-                bot.send_photo(
-                    chat_id,
-                    img,
-                    caption=text,
-                    parse_mode="Markdown",
-                    reply_markup=markup
-                )
-            except:
-                bot.send_message(
-                    chat_id,
-                    text,
-                    parse_mode="Markdown",
-                    reply_markup=markup
-                )
-        else:
-            bot.send_message(
-                chat_id,
-                text,
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
-
-    elif data == "lib_back":
-        cats = get_lib_categories()
-        markup = types.InlineKeyboardMarkup()
-
-        for c in cats:
-            markup.add(types.InlineKeyboardButton(
-                c,
-                callback_data=f"libcat_{c}"
-            ))
-
-        bot.edit_message_text(
-            "📚 Выбери категорию:",
-            chat_id,
-            msg_id,
-            reply_markup=markup
-        )
-
-
-# ================= WEBHOOK И СЕРВЕР =================
-
-@app.route("/" + TOKEN, methods=["POST"])
-def webhook():
-    json_str = request.get_data().decode("UTF-8")
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return "OK", 200
-
-
-@app.route("/")
-def index():
-    return "Бот работает на Render ✅"
-
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000))
-    )
+            plt.grid(True, linestyle="--", alpha
