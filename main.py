@@ -71,6 +71,10 @@ def init_db():
         ws = sh.add_worksheet(title="Progress", rows=100, cols=3)
         ws.append_row(["date", "user_id", "note"])
 
+    if "GymWeights" not in worksheets:
+        ws = sh.add_worksheet(title="GymWeights", rows=100, cols=4)
+        ws.append_row(["date", "user_id", "exercise", "weight"])
+
     if "Library" not in worksheets:
         ws = sh.add_worksheet(title="Library", rows=100, cols=4)
         ws.append_row(["category", "name", "description", "image_url"])
@@ -115,6 +119,7 @@ active_workouts = {}
 user_states = {}
 meas_temp = {}
 kbzhu_temp = {}
+gym_temp = {}
 
 
 # ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================
@@ -158,6 +163,7 @@ def is_menu_button(text):
 def reset_input_states(user_id):
     kbzhu_temp.pop(user_id, None)
     meas_temp.pop(user_id, None)
+    gym_temp.pop(user_id, None)
     user_states[user_id] = None
 
 
@@ -168,7 +174,7 @@ def get_program_from_sheet(day):
     try:
         ws = sh.worksheet("Program")
         records = ws.get_all_records()
-        return [r for r in records if str(r.get("day", "")) == day]
+        return [r for r in records if str(r.get("day", "")).strip() == str(day).strip()]
     except:
         return []
 
@@ -199,7 +205,7 @@ def get_lib_exercises(cat):
         ws = sh.worksheet("Library")
         return [
             r for r in ws.get_all_records()
-            if str(r.get("category", "")).strip() == cat
+            if str(r.get("category", "")).strip() == str(cat).strip()
         ]
     except:
         return []
@@ -266,13 +272,11 @@ def workout_keyboard(user_id):
         status = "✅" if done_count == sets_count else "⬜"
         exercise_name = ex.get("exercise", "Упражнение")
 
-        # Кнопка-заголовок упражнения
         markup.row(types.InlineKeyboardButton(
             f"{status} {exercise_name} ({done_count}/{sets_count})",
             callback_data=f"exinfo_{i}"
         ))
 
-        # Кнопки подходов
         row_buttons = []
 
         for s in range(sets_count):
@@ -338,6 +342,16 @@ def start(message):
 def kbzhu_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
+
+    if "Отмена" in text:
+        kbzhu_temp.pop(user_id, None)
+        bot.send_message(
+            user_id,
+            "Расчёт КБЖУ отменён.",
+            reply_markup=main_keyboard(user_id)
+        )
+        return
+
     u = kbzhu_temp[user_id]
 
     if "age" not in u:
@@ -506,6 +520,155 @@ def progress_input_handler(message):
     )
 
 
+# ================= РАБОЧИЕ ВЕСА В ЗАЛЕ =================
+
+@bot.message_handler(
+    func=lambda m:
+    m.from_user.id in gym_temp
+    and not is_menu_button(m.text)
+)
+def gym_weight_input_handler(message):
+    user_id = message.from_user.id
+    text = (message.text or "").strip()
+
+    if "Отмена" in text:
+        gym_temp.pop(user_id, None)
+        bot.send_message(
+            message.chat.id,
+            "Отменено.",
+            reply_markup=main_keyboard(user_id)
+        )
+        return
+
+    temp = gym_temp.get(user_id, {})
+    mode = temp.get("mode")
+    step = temp.get("step")
+
+    if mode == "add":
+        if step == "exercise":
+            temp["exercise"] = text
+            temp["step"] = "weight"
+            gym_temp[user_id] = temp
+
+            bot.send_message(
+                message.chat.id,
+                "Введи рабочий вес числом.\nНапример: `45` или `45.5`",
+                parse_mode="Markdown"
+            )
+            return
+
+        elif step == "weight":
+            weight = safe_float(text, None)
+
+            if weight is None:
+                bot.send_message(
+                    message.chat.id,
+                    "Введи вес числом. Например: 45"
+                )
+                return
+
+            if sh:
+                try:
+                    sh.worksheet("GymWeights").append_row([
+                        now_str(),
+                        str(user_id),
+                        temp.get("exercise", ""),
+                        weight
+                    ])
+                except:
+                    pass
+
+            gym_temp.pop(user_id, None)
+
+            bot.send_message(
+                message.chat.id,
+                f"✅ Рабочий вес сохранён:\n"
+                f"{temp.get('exercise', '')} — {weight} кг",
+                reply_markup=main_keyboard(user_id)
+            )
+            return
+
+    elif mode == "graph":
+        exercise_name = text.strip()
+
+        if not sh:
+            gym_temp.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "Таблица недоступна.",
+                reply_markup=main_keyboard(user_id)
+            )
+            return
+
+        try:
+            rows = sh.worksheet("GymWeights").get_all_records()
+
+            dates = []
+            weights = []
+
+            for row in rows:
+                row_user = str(row.get("user_id", ""))
+                row_ex = str(row.get("exercise", "")).strip().lower()
+
+                if row_user == str(user_id) and row_ex == exercise_name.lower():
+                    w = safe_float(row.get("weight"), None)
+
+                    if w is not None:
+                        dates.append(str(row.get("date", ""))[:10])
+                        weights.append(w)
+
+            if not weights:
+                gym_temp.pop(user_id, None)
+                bot.send_message(
+                    message.chat.id,
+                    f"По упражнению `{exercise_name}` пока нет данных.\n"
+                    f"Сначала добавь рабочий вес через кнопку "
+                    f"«➕ Записать рабочий вес».",
+                    parse_mode="Markdown",
+                    reply_markup=main_keyboard(user_id)
+                )
+                return
+
+            plt.figure(figsize=(10, 5))
+            plt.plot(
+                dates,
+                weights,
+                marker="o",
+                color="#8A2BE2",
+                linewidth=2,
+                markersize=8
+            )
+
+            plt.title(f"Рабочий вес: {exercise_name}", fontsize=14)
+            plt.xlabel("Дата")
+            plt.ylabel("Вес, кг")
+            plt.grid(True, linestyle="--", alpha=0.6)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            img = io.BytesIO()
+            plt.savefig(img, format="png", dpi=100)
+            img.seek(0)
+            plt.close()
+
+            gym_temp.pop(user_id, None)
+
+            bot.send_photo(
+                message.chat.id,
+                img,
+                caption=f"🏋️ График рабочих весов: {exercise_name}",
+                reply_markup=main_keyboard(user_id)
+            )
+
+        except Exception as e:
+            gym_temp.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                f"Ошибка построения графика: {e}",
+                reply_markup=main_keyboard(user_id)
+            )
+
+
 # ================= ОСНОВНОЕ МЕНЮ =================
 
 @bot.message_handler(func=lambda m: True)
@@ -513,8 +676,6 @@ def handle_text(message):
     text = (message.text or "").strip()
     user_id = message.from_user.id
 
-    # Если нажата любая кнопка главного меню —
-    # сбрасываем незавершённые анкеты
     if is_menu_button(text):
         reset_input_states(user_id)
 
@@ -585,18 +746,35 @@ def handle_text(message):
 
     elif "Прогресс" in text or "📈" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
+
         markup.add(types.InlineKeyboardButton(
             "📝 Записать заметку",
             callback_data="prog_note"
         ))
+
         markup.add(types.InlineKeyboardButton(
-            "📊 Показать график веса",
-            callback_data="prog_graph"
+            "📊 График веса тела",
+            callback_data="prog_graph_weight"
+        ))
+
+        markup.add(types.InlineKeyboardButton(
+            "📏 Графики параметров",
+            callback_data="prog_params"
+        ))
+
+        markup.add(types.InlineKeyboardButton(
+            "➕ Записать рабочий вес",
+            callback_data="gym_add"
+        ))
+
+        markup.add(types.InlineKeyboardButton(
+            "🏋️ График рабочих весов",
+            callback_data="gym_graph"
         ))
 
         bot.send_message(
             message.chat.id,
-            "Что делаем с прогрессом?",
+            "📈 Что смотрим по прогрессу?",
             reply_markup=markup
         )
 
@@ -704,7 +882,6 @@ def callback_query(call):
     msg_id = call.message.message_id
     data = call.data
 
-
     # ---------- АДМИН-ПАНЕЛЬ ----------
 
     if data == "admin_motivate":
@@ -726,7 +903,6 @@ def callback_query(call):
 
         except Exception as e:
             bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
-
 
     elif data == "admin_remind":
         if user_id != ADMIN_ID:
@@ -793,8 +969,7 @@ def callback_query(call):
             reply_markup=cancel_plus_menu_keyboard(user_id)
         )
 
-
-    elif data == "prog_graph":
+    elif data in ["prog_graph", "prog_graph_weight"]:
         if not sh:
             return
 
@@ -830,7 +1005,7 @@ def callback_query(call):
                 linewidth=2,
                 markersize=8
             )
-            plt.title("Динамика веса (кг)", fontsize=14)
+            plt.title("Динамика веса тела (кг)", fontsize=14)
             plt.xlabel("Дата")
             plt.ylabel("Вес")
             plt.grid(True, linestyle="--", alpha=0.6)
@@ -842,7 +1017,7 @@ def callback_query(call):
             img.seek(0)
             plt.close()
 
-            bot.send_photo(chat_id, img, caption="Твой график веса 📈🍑")
+            bot.send_photo(chat_id, img, caption="📊 Твой график веса тела 📈🍑")
 
         except Exception as e:
             bot.answer_callback_query(
@@ -850,6 +1025,141 @@ def callback_query(call):
                 f"Ошибка: {e}",
                 show_alert=True
             )
+
+    elif data == "prog_params":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+
+        markup.add(types.InlineKeyboardButton(
+            "⚖️ Вес тела",
+            callback_data="param_weight"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "📏 Плечи",
+            callback_data="param_shoulders"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "🍒 Грудь",
+            callback_data="param_chest"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "⌛ Талия",
+            callback_data="param_waist"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "🍑 Булки",
+            callback_data="param_butt"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "🦵 Бёдра",
+            callback_data="param_hips"
+        ))
+
+        bot.edit_message_text(
+            "📏 Выбери параметр для графика:",
+            chat_id,
+            msg_id,
+            reply_markup=markup
+        )
+
+    elif data.startswith("param_"):
+        if not sh:
+            return
+
+        param = data.replace("param_", "")
+
+        param_titles = {
+            "weight": ("Вес тела", "кг", "#FF69B4"),
+            "shoulders": ("Плечи", "см", "#1E90FF"),
+            "chest": ("Грудь", "см", "#FF1493"),
+            "waist": ("Талия", "см", "#32CD32"),
+            "butt": ("Булки", "см", "#FF8C00"),
+            "hips": ("Бёдра", "см", "#8A2BE2")
+        }
+
+        title, unit, color = param_titles.get(param, ("Параметр", "", "#FF69B4"))
+
+        try:
+            rows = sh.worksheet("Measurements").get_all_records()
+
+            dates = []
+            values = []
+
+            for row in rows:
+                if str(row.get("user_id", "")) == str(user_id):
+                    val = safe_float(row.get(param), None)
+
+                    if val is not None:
+                        dates.append(str(row.get("date", ""))[:10])
+                        values.append(val)
+
+            if not values:
+                bot.answer_callback_query(
+                    call.id,
+                    f"Нет данных для графика: {title}",
+                    show_alert=True
+                )
+                return
+
+            plt.figure(figsize=(10, 5))
+            plt.plot(
+                dates,
+                values,
+                marker="o",
+                color=color,
+                linewidth=2,
+                markersize=8
+            )
+
+            plt.title(f"Динамика: {title}", fontsize=14)
+            plt.xlabel("Дата")
+            plt.ylabel(unit)
+            plt.grid(True, linestyle="--", alpha=0.6)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            img = io.BytesIO()
+            plt.savefig(img, format="png", dpi=100)
+            img.seek(0)
+            plt.close()
+
+            bot.send_photo(
+                chat_id,
+                img,
+                caption=f"📈 График: {title}"
+            )
+
+        except Exception as e:
+            bot.answer_callback_query(
+                call.id,
+                f"Ошибка: {e}",
+                show_alert=True
+            )
+
+    elif data == "gym_add":
+        gym_temp[user_id] = {
+            "mode": "add",
+            "step": "exercise"
+        }
+
+        bot.send_message(
+            chat_id,
+            "🏋️ Введи название упражнения.\nНапример: `Жим ногами`",
+            parse_mode="Markdown",
+            reply_markup=cancel_plus_menu_keyboard(user_id)
+        )
+
+    elif data == "gym_graph":
+        gym_temp[user_id] = {
+            "mode": "graph",
+            "step": "exercise"
+        }
+
+        bot.send_message(
+            chat_id,
+            "🏋️ Введи название упражнения, по которому построить график.\nНапример: `Жим ногами`",
+            parse_mode="Markdown",
+            reply_markup=cancel_plus_menu_keyboard(user_id)
+        )
 
 
     # ---------- КБЖУ ----------
@@ -863,7 +1173,6 @@ def callback_query(call):
             msg_id,
             parse_mode="Markdown"
         )
-
 
     elif data == "kbzhu_last":
         if not sh:
@@ -927,7 +1236,6 @@ def callback_query(call):
                 show_alert=True
             )
 
-
     elif data.startswith("kbzhu_act_"):
         if user_id not in kbzhu_temp:
             bot.answer_callback_query(
@@ -961,7 +1269,6 @@ def callback_query(call):
             "Какая у тебя цель?",
             reply_markup=markup
         )
-
 
     elif data.startswith("kbzhu_goal_"):
         if user_id not in kbzhu_temp:
@@ -1036,7 +1343,6 @@ def callback_query(call):
             msg_id
         )
 
-
     elif data == "nopower_skip":
         if sh:
             try:
@@ -1085,13 +1391,11 @@ def callback_query(call):
             reply_markup=workout_keyboard(user_id)
         )
 
-
     elif data.startswith("exinfo_"):
         bot.answer_callback_query(
             call.id,
             "Нажимай на подходы ниже 👇"
         )
-
 
     elif data.startswith("set_"):
         if user_id not in active_workouts:
@@ -1121,7 +1425,6 @@ def callback_query(call):
             reply_markup=workout_keyboard(user_id)
         )
 
-
     elif data == "finish":
         if user_id not in active_workouts:
             return
@@ -1134,7 +1437,6 @@ def callback_query(call):
 
         for i in range(len(program)):
             sets_count = safe_int(program[i].get("sets", 1), 1)
-
             if len(completed_sets.get(i, [])) != sets_count:
                 all_done = False
                 break
@@ -1191,7 +1493,6 @@ def callback_query(call):
             reply_markup=markup
         )
 
-
     elif data.startswith("libex_"):
         parts = data.split("_")
         cat = parts[1]
@@ -1240,7 +1541,6 @@ def callback_query(call):
                 parse_mode="Markdown",
                 reply_markup=markup
             )
-
 
     elif data == "lib_back":
         cats = get_lib_categories()
