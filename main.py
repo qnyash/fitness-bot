@@ -254,7 +254,6 @@ def get_workout_text(user_id):
 
     day_name = workout['day']
     
-    # Заголовок для режима "Нет сил"
     if day_name == "СилыНет":
         return "😩 **Режим: Нет сил**\nОтмечай выполненные:"
     else:
@@ -271,27 +270,27 @@ def workout_keyboard(user_id):
     program = workout["program"]
     completed_sets = workout.get("completed_sets", {})
     
-    # Проверяем режим
     is_no_power_mode = (workout['day'] == "СилыНет")
 
     for i, ex in enumerate(program):
         exercise_name = ex.get("exercise", "Упражнение")
         
-        # Определяем состояние упражнения (выполнено или нет)
-        # Для режима "Нет сил" считаем выполненным, если индекс 0 выполнен
-        # Для обычной тренировки проверяем все подходы (хотя здесь мы просто генерируем кнопку одного действия)
-        
         is_done = False
         
         if is_no_power_mode:
+            # Для режима "Нет сил": проверяем наличие флага 0
             is_done = 0 in completed_sets.get(i, [])
         else:
+            # Обычная тренировка: если все подходы выполнены
             sets_count = safe_int(ex.get("sets", 1), 1)
             done_count = len(completed_sets.get(i, []))
             is_done = (done_count == sets_count)
 
-        # Текст кнопки: Галочка + Название
-        label = "✅ " + exercise_name if is_done else exercise_name
+        # Текст кнопки: Галочка или Квадрат + Название
+        if is_done:
+            label = "✅ " + exercise_name
+        else:
+            label = "⬜ " + exercise_name
         
         # Одна кнопка на упражнение
         markup.row(types.InlineKeyboardButton(
@@ -299,11 +298,21 @@ def workout_keyboard(user_id):
             callback_data=f"toggle_{i}"
         ))
 
-    # Кнопки завершения
-    markup.add(types.InlineKeyboardButton(
-        "🏁 Завершить тренировку",
-        callback_data="finish"
-    ))
+    # Кнопки завершения и действий для режима "Нет сил"
+    if is_no_power_mode:
+        markup.add(types.InlineKeyboardButton(
+            "➡️ Перенести",
+            callback_data="nopower_postpone"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            "❌ Пропустить",
+            callback_data="nopower_skip"
+        ))
+    else:
+        markup.add(types.InlineKeyboardButton(
+            "🏁 Завершить тренировку",
+            callback_data="finish"
+        ))
 
     return markup
 
@@ -421,7 +430,7 @@ def meas_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" в text:
         meas_temp.pop(user_id, None)
         bot.send_message(
             user_id,
@@ -502,7 +511,7 @@ def progress_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" в text:
         user_states[user_id] = None
         bot.send_message(
             message.chat.id,
@@ -541,7 +550,7 @@ def gym_weight_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" в text:
         gym_temp.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -689,7 +698,7 @@ def handle_text(message):
     if is_menu_button(text):
         reset_input_states(user_id)
 
-    if "Тренировка" in text or "🏋️" in text:
+    if "Тренировка" в text or "🏋️" в text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
             "Д1",
@@ -706,7 +715,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Замеры" in text or "📏" in text:
+    elif "Замеры" в text or "📏" в text:
         meas_temp[user_id] = {"step": "weight"}
 
         bot.send_message(
@@ -715,7 +724,7 @@ def handle_text(message):
             reply_markup=main_keyboard(user_id)
         )
 
-    elif "История" in text or "📅" in text:
+    elif "История" в text or "📅" в text:
         if not sh:
             bot.send_message(message.chat.id, "История недоступна.")
             return
@@ -754,7 +763,7 @@ def handle_text(message):
         except:
             bot.send_message(message.chat.id, "Не смогла загрузить историю 😢")
 
-    elif "Прогресс" in text or "📈" in text:
+    elif "Прогресс" в text or "📈" в text:
         markup = types.InlineKeyboardMarkup(row_width=1)
 
         markup.add(types.InlineKeyboardButton(
@@ -788,7 +797,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text:
+    elif "КБЖУ" в text or "🥗" в text or "🧮" в text or "Калькулятор" в text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "➕ Новый расчёт",
@@ -806,7 +815,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Библиотека" in text or "📚" in text:
+    elif "Библиотека" в text or "📚" в text:
         cats = get_lib_categories()
 
         if not cats:
@@ -830,8 +839,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "нет сил" in text:
-        # Показываем меню выбора действий
+    elif "нет сил" в text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "💡 Режим: Нет сил (Легкая версия)",
@@ -852,7 +860,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Админ" in text and user_id == ADMIN_ID:
+    elif "Админ" в text and user_id == ADMIN_ID:
         url = os.environ.get("SPREADSHEET_URL")
 
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -1413,18 +1421,15 @@ def callback_query(call):
         )
 
     elif data.startswith("toggle_"):
-        # Обработка переключения галочки для упражнения
         if user_id not in active_workouts:
             return
 
         ex_idx = int(data.split("_")[1])
         completed_sets = active_workouts[user_id].get("completed_sets", {})
 
-        # Если упражнение еще не отмечено
         if ex_idx not in completed_sets:
-            completed_sets[ex_idx] = [0] # Помечаем как выполненное (флаг 0)
+            completed_sets[ex_idx] = [0] 
         else:
-            # Если уже отмечено, удаляем отметку
             if 0 in completed_sets[ex_idx]:
                 del completed_sets[ex_idx]
 
@@ -1452,12 +1457,9 @@ def callback_query(call):
 
         for i in range(len(program)):
             if is_no_power_mode:
-                # В режиме "нет сил" проверяем наличие флага 0
                 if i not in completed_sets:
                     all_done = False
             else:
-                # Для обычных тренировок проверяем количество подходов (если нужно)
-                # Сейчас в обычной логике тоже одна кнопка, так что проверяем наличие ключа
                 if i not in completed_sets:
                     all_done = False
             
