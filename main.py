@@ -88,7 +88,6 @@ def get_workout_text(user_id):
     for i, ex in enumerate(workout['program']):
         sets_count = int(ex.get('sets', 1))
         done_count = len(completed_sets.get(i, []))
-        # Зеленая галочка для упражнения, если все подходы сделаны
         status = "✅" if done_count == sets_count else "⬜" 
         text += f"{status} **{ex.get('exercise', 'Упр')}** ({done_count}/{sets_count})\n"
     return text
@@ -101,17 +100,22 @@ def workout_keyboard(user_id):
     program = workout['program']
     completed_sets = workout.get('completed_sets', {})
 
+    # Генерируем кнопки для каждого упражнения отдельно
     for i, ex in enumerate(program):
         sets_count = int(ex.get('sets', 1))
         reps = ex.get('reps', '0')
-        row = []
+        
+        row_buttons = []
         for s in range(sets_count):
             is_done = s in completed_sets.get(i, [])
-            # Белый круг ⚪ для невыполненного, палец вверх 👍 для выполненного
-            label = "👍" if is_done else "⚪" 
-            row.append(types.InlineKeyboardButton(f"{label} {sets_count}x{reps}", callback_data=f"set_{i}_{s}"))
-        markup.row(*row) 
+            label = "👍" if is_done else "⚪"
+            # callback_data кодирует: set_номерУпражнения_номерПодхода
+            row_buttons.append(types.InlineKeyboardButton(f"{label} {sets_count}x{reps}", callback_data=f"set_{i}_{s}"))
+        
+        # Добавляем ряд кнопок именно для этого упражнения
+        markup.row(*row_buttons)
 
+    # Кнопка завершения в самом низу
     markup.add(types.InlineKeyboardButton("🏁 Завершить тренировку", callback_data="finish"))
     return markup
 
@@ -301,7 +305,7 @@ def callback_query(call):
             bot.send_photo(chat_id, img, caption="Твой график веса 📈🍑")
         except Exception as e: bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
 
-    # --- ТРЕНИРОВКИ (ФИНАЛЬНАЯ ВЕРСИЯ С КРУЖКАМИ И ПАЛЬЦАМИ) ---
+    # --- ТРЕНИРОВКИ (ВИЗУАЛЬНО РАЗДЕЛЕННЫЕ ПО УПРАЖНЕНИЯМ) ---
     elif data == "nopower_postpone": bot.edit_message_text("🛋 Перенесено на завтра. Отдыхай!", chat_id, msg_id)
     elif data == "nopower_skip":
         if sh:
@@ -333,6 +337,7 @@ def callback_query(call):
 
         active_workouts[user_id]['completed_sets'] = completed_sets
         text = get_workout_text(user_id)
+        # Обновляем и текст (статус упражнения), и кнопки (статус подходов)
         bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
 
     elif data == "finish":
