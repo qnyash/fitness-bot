@@ -174,7 +174,6 @@ def get_program_from_sheet(day):
     try:
         ws = sh.worksheet("Program")
         records = ws.get_all_records()
-        # Ищем точное совпадение дня (убираем пробелы)
         return [r for r in records if str(r.get("day", "")).strip() == str(day).strip()]
     except:
         return []
@@ -278,27 +277,22 @@ def workout_keyboard(user_id):
         is_done = False
         
         if is_no_power_mode:
-            # Для режима "Нет сил": проверяем наличие флага 0
             is_done = 0 in completed_sets.get(i, [])
         else:
-            # Обычная тренировка: если все подходы выполнены
             sets_count = safe_int(ex.get("sets", 1), 1)
             done_count = len(completed_sets.get(i, []))
             is_done = (done_count == sets_count)
 
-        # Текст кнопки: Галочка или Квадрат + Название
         if is_done:
             label = "✅ " + exercise_name
         else:
             label = "⬜ " + exercise_name
         
-        # Одна кнопка на упражнение
         markup.row(types.InlineKeyboardButton(
             label,
             callback_data=f"toggle_{i}"
         ))
 
-    # Кнопки завершения и действий для режима "Нет сил"
     if is_no_power_mode:
         markup.add(types.InlineKeyboardButton(
             "➡️ Перенести",
@@ -362,7 +356,7 @@ def kbzhu_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" in text: # ИСПРАВЛЕНО
         kbzhu_temp.pop(user_id, None)
         bot.send_message(
             user_id,
@@ -430,7 +424,7 @@ def meas_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" in text: # ИСПРАВЛЕНО
         meas_temp.pop(user_id, None)
         bot.send_message(
             user_id,
@@ -511,7 +505,7 @@ def progress_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" in text: # ИСПРАВЛЕНО
         user_states[user_id] = None
         bot.send_message(
             message.chat.id,
@@ -550,7 +544,7 @@ def gym_weight_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" in text:
+    if "Отмена" in text: # ИСПРАВЛЕНО
         gym_temp.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -698,7 +692,7 @@ def handle_text(message):
     if is_menu_button(text):
         reset_input_states(user_id)
 
-    if "Тренировка" in text or "🏋️" in text:
+    if "Тренировка" in text or "🏋️" in text: # ИСПРАВЛЕНО
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
             "Д1",
@@ -715,7 +709,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Замеры" in text or "📏" in text:
+    elif "Замеры" in text or "📏" in text: # ИСПРАВЛЕНО
         meas_temp[user_id] = {"step": "weight"}
 
         bot.send_message(
@@ -724,7 +718,7 @@ def handle_text(message):
             reply_markup=main_keyboard(user_id)
         )
 
-    elif "История" in text or "📅" в text:
+    elif "История" in text or "📅" in text: # ИСПРАВЛЕНО
         if not sh:
             bot.send_message(message.chat.id, "История недоступна.")
             return
@@ -763,7 +757,7 @@ def handle_text(message):
         except:
             bot.send_message(message.chat.id, "Не смогла загрузить историю 😢")
 
-    elif "Прогресс" in text or "📈" in text:
+    elif "Прогресс" in text or "📈" in text: # ИСПРАВЛЕНО
         markup = types.InlineKeyboardMarkup(row_width=1)
 
         markup.add(types.InlineKeyboardButton(
@@ -797,7 +791,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text:
+    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text: # ИСПРАВЛЕНО
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "➕ Новый расчёт",
@@ -815,7 +809,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Библиотека" in text or "📚" in text:
+    elif "Библиотека" in text or "📚" in text: # ИСПРАВЛЕНО
         cats = get_lib_categories()
 
         if not cats:
@@ -839,10 +833,10 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "нет сил" in text:
+    elif "нет сил" in text: # ИСПРАВЛЕНО
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
-            "💡 Легкая версия",
+            "💡 Режим: Нет сил (Легкая версия)",
             callback_data="day_СилыНет"
         ))
         markup.add(types.InlineKeyboardButton(
@@ -860,7 +854,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Админ" in text and user_id == ADMIN_ID:
+    elif "Админ" in text and user_id == ADMIN_ID: # ИСПРАВЛЕНО
         url = os.environ.get("SPREADSHEET_URL")
 
         markup = types.InlineKeyboardMarkup(row_width=1)
