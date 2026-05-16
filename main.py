@@ -320,7 +320,7 @@ def start(message):
             pass
 
     welcome_text = (
-        f"Привет, {message.from_user.first_name}! 🍑\n"
+        f"Привет, {message.from_user.first_name}! 🤸\n"
         f"Готова растрясти булочки?"
     )
 
@@ -682,11 +682,11 @@ def handle_text(message):
     if "Тренировка" in text or "🏋️" in text:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
-            "Д1 — Ноги/ягодицы",
+            "Д1",
             callback_data="day_Д1"
         ))
         markup.add(types.InlineKeyboardButton(
-            "Д2 — Спина/плечи",
+            "Д2",
             callback_data="day_Д2"
         ))
 
