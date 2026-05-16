@@ -174,6 +174,7 @@ def get_program_from_sheet(day):
     try:
         ws = sh.worksheet("Program")
         records = ws.get_all_records()
+        # Исправлено: убираем лишние пробелы при сравнении
         return [r for r in records if str(r.get("day", "")).strip() == str(day).strip()]
     except:
         return []
@@ -282,9 +283,14 @@ def workout_keyboard(user_id):
         for s in range(sets_count):
             is_done = s in completed_sets.get(i, [])
             label = "👍" if is_done else "⚪"
+            
+            # ИЗМЕНЕНИЕ ЗДЕСЬ: 
+            # Было: f"{label} {sets_count}x{reps}" (напр. ⚪ 3x15)
+            # Стало: f"{label} {s+1}x{reps}" (напр. ⚪ 1x15, ⚪ 2x15...)
+            btn_text = f"{label} {s+1}x{reps}"
 
             row_buttons.append(types.InlineKeyboardButton(
-                f"{label} {sets_count}x{reps}",
+                btn_text,
                 callback_data=f"set_{i}_{s}"
             ))
 
@@ -320,7 +326,7 @@ def start(message):
             pass
 
     welcome_text = (
-        f"Привет, {message.from_user.first_name}! 🤸\n"
+        f"Привет, {message.from_user.first_name}! 🍑\n"
         f"Готова растрясти булочки?"
     )
 
