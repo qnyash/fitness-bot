@@ -968,7 +968,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
 
 
-    # ---------- ПРОГРЕСС ----------
+      # ---------- ПРОГРЕСС ----------
 
     elif data == "prog_note":
         user_states[user_id] = "waiting_progress"
@@ -1020,3 +1020,14 @@ def callback_query(call):
             plt.xlabel("Дата")
             plt.ylabel("Вес")
             plt.grid(True, linestyle="--", alpha=0.6)
+
+            img = io.BytesIO()
+            plt.savefig(img, format='png', dpi=100)
+            img.seek(0)
+            plt.close()
+
+            bot.send_photo(chat_id, img, caption="📊 Твой график веса тела 📈🍑")
+
+        except Exception as e:
+            print(f"Ошибка при построении графика: {e}")
+            bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
