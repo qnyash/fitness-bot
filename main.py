@@ -511,7 +511,7 @@ def progress_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" в text:
+    if "Отмена" in text:
         user_states[user_id] = None
         bot.send_message(
             message.chat.id,
@@ -715,7 +715,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Замеры" in text or "📏" в text:
+    elif "Замеры" in text or "📏" in text:
         meas_temp[user_id] = {"step": "weight"}
 
         bot.send_message(
@@ -763,7 +763,7 @@ def handle_text(message):
         except:
             bot.send_message(message.chat.id, "Не смогла загрузить историю 😢")
 
-    elif "Прогресс" in text or "📈" в text:
+    elif "Прогресс" in text or "📈" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
 
         markup.add(types.InlineKeyboardButton(
@@ -797,7 +797,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "КБЖУ" in text or "🥗" в text or "🧮" in text or "Калькулятор" in text:
+    elif "КБЖУ" in text or "🥗" in text or "🧮" in text or "Калькулятор" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
             "➕ Новый расчёт",
@@ -815,7 +815,7 @@ def handle_text(message):
             reply_markup=markup
         )
 
-    elif "Библиотека" в text or "📚" in text:
+    elif "Библиотека" in text or "📚" in text:
         cats = get_lib_categories()
 
         if not cats:
