@@ -281,30 +281,64 @@ def workout_keyboard(user_id):
     program = workout["program"]
     completed_sets = workout.get("completed_sets", {})
     
+    # Проверяем, это режим "СилыНет" или обычная тренировка
     is_no_power_mode = (workout['day'] == "СилыНет")
 
     for i, ex in enumerate(program):
         exercise_name = ex.get("exercise", "Упражнение")
+        sets_count = safe_int(ex.get("sets", 1), 1)
+        reps = ex.get("reps", "0")
         
-        is_done = False
+        # Определяем состояние упражнения (выполнено ли полностью)
+        is_done_exercise = False
         
         if is_no_power_mode:
-            is_done = 0 in completed_sets.get(i, [])
+            # Для режима "Нет сил": если выполнена хотя бы одна кнопка (индекс 0)
+            is_done_exercise = 0 in completed_sets.get(i, [])
         else:
-            sets_count = safe_int(ex.get("sets", 1), 1)
+            # Для обычной тренировки: если выполнены все подходы
             done_count = len(completed_sets.get(i, []))
-            is_done = (done_count == sets_count)
+            is_done_exercise = (done_count == sets_count)
 
-        if is_done:
-            label = "✅ " + exercise_name
-        else:
-            label = "⬜ " + exercise_name
-        
+        # Кнопка-заголовок упражнения (квадратик + название)
+        label_header = "✅ " + exercise_name if is_done_exercise else "⬜ " + exercise_name
         markup.row(types.InlineKeyboardButton(
-            label,
+            label_header,
             callback_data=f"toggle_{i}"
         ))
 
+        row_buttons = []
+
+        if is_no_power_mode:
+            # --- РЕЖИМ "НЕТ СИЛ" ---
+            # Одна большая кнопка на всё упражнение
+            is_done_single = 0 in completed_sets.get(i, [])
+            btn_text = "👍 Выполнить" if is_done_single else "⚪ Выполнить"
+            
+            row_buttons.append(types.InlineKeyboardButton(
+                btn_text,
+                callback_data=f"set_{i}_0"
+            ))
+            
+        else:
+            # --- ОБЫЧНАЯ ТРЕНИРОВКА (С ПОДХОДАМИ) ---
+            # Генерируем отдельные кнопки для каждого подхода
+            for s in range(sets_count):
+                is_set_done = s in completed_sets.get(i, [])
+                set_icon = "👍" if is_set_done else "⚪"
+                
+                # Формируем текст кнопки: "1x15", "2x15"...
+                btn_text = f"{set_icon} {s+1}x{reps}"
+
+                row_buttons.append(types.InlineKeyboardButton(
+                    btn_text,
+                    callback_data=f"set_{i}_{s}"
+                ))
+        
+        # Добавляем ряд кнопок подходов (или одной кнопки) к клавиатуре
+        markup.row(*row_buttons)
+
+    # Кнопка завершения
     markup.add(types.InlineKeyboardButton(
         "🏁 Завершить тренировку",
         callback_data="finish"
