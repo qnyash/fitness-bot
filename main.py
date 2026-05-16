@@ -868,7 +868,7 @@ def handle_text(message):
     elif "нет сил" in text:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
-            "💡 Режим: Нет сил (Легкая версия)",
+            "💡 Режим: Нет сил",
             callback_data="day_СилыНет"
         ))
         markup.add(types.InlineKeyboardButton(
