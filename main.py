@@ -430,7 +430,7 @@ def meas_input_handler(message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
 
-    if "Отмена" в text:
+    if "Отмена" in text:
         meas_temp.pop(user_id, None)
         bot.send_message(
             user_id,
