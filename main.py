@@ -301,6 +301,7 @@ def workout_keyboard(user_id):
             is_done_exercise = (done_count == sets_count)
 
         # Кнопка-заголовок упражнения (квадратик + название)
+        # Эта кнопка есть ВОВЕГДА для обоих режимов
         label_header = "✅ " + exercise_name if is_done_exercise else "⬜ " + exercise_name
         markup.row(types.InlineKeyboardButton(
             label_header,
@@ -311,14 +312,8 @@ def workout_keyboard(user_id):
 
         if is_no_power_mode:
             # --- РЕЖИМ "НЕТ СИЛ" ---
-            # Одна большая кнопка на всё упражнение
-            is_done_single = 0 in completed_sets.get(i, [])
-            btn_text = "👍 Выполнить" if is_done_single else "⚪ Выполнить"
-            
-            row_buttons.append(types.InlineKeyboardButton(
-                btn_text,
-                callback_data=f"set_{i}_0"
-            ))
+            # Ничего не добавляем сюда! Мы убираем лишние кнопки "Выполнить"
+            pass
             
         else:
             # --- ОБЫЧНАЯ ТРЕНИРОВКА (С ПОДХОДАМИ) ---
@@ -335,8 +330,9 @@ def workout_keyboard(user_id):
                     callback_data=f"set_{i}_{s}"
                 ))
         
-        # Добавляем ряд кнопок подходов (или одной кнопки) к клавиатуре
-        markup.row(*row_buttons)
+        # Добавляем ряд кнопок подходов ТОЛЬКО если это обычная тренировка
+        if not is_no_power_mode and row_buttons:
+            markup.row(*row_buttons)
 
     # Кнопка завершения
     markup.add(types.InlineKeyboardButton(
