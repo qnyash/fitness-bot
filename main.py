@@ -114,13 +114,28 @@ def workout_keyboard(user_id):
 
 # ================= КЛАВИАТУРЫ МЕНЮ =================
 def main_keyboard(user_id):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.row("🏋️ Тренировка", "📏 Замеры")
-    markup.row("📈 Прогресс", "🥗 КБЖУ")
-    markup.row("📚 Библиотека", "😩 Сегодня нет сил")
-    markup.row("📅 История")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    # row_width по умолчанию 3, но мы будем добавлять кнопки построчно
+    
+    # 1. Тренировка (на всю ширину)
+    markup.add("🏋️ Тренировка")
+    
+    # 2. Замеры и История (в одну строку)
+    markup.row("📏 Замеры", "📅 История")
+    
+    # 3. Прогресс и Библиотека (в одну строку)
+    markup.row("📈 Прогресс", "📚 Библиотека")
+    
+    # 4. Калькулятор КБЖУ (на всю ширину)
+    markup.add("🧮 Калькулятор КБЖУ")
+    
+    # 5. Сегодня нет сил (на всю ширину)
+    markup.add("😩 Сегодня нет сил")
+    
+    # 6. Админ-панель (только для тебя, на всю ширину)
     if user_id == ADMIN_ID:
-        markup.row("⚙️ Админ-панель")
+        markup.add("⚙️ Админ-панель")
+        
     return markup
 
 # ================= ХЭНДЛЕРЫ =================
