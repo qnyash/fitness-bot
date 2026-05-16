@@ -79,19 +79,7 @@ def get_lib_exercises(cat):
         return [r for r in ws.get_all_records() if str(r.get('category', '')) == cat]
     except: return []
 
-# ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ТРЕНИРОВОК =================
-def get_workout_text(user_id):
-    workout = active_workouts.get(user_id)
-    if not workout: return ""
-    text = f"🏋️ **Тренировка: {workout['day']}**\n\n"
-    completed_sets = workout.get('completed_sets', {})
-    for i, ex in enumerate(workout['program']):
-        sets_count = int(ex.get('sets', 1))
-        done_count = len(completed_sets.get(i, []))
-        status = "✅" if done_count == sets_count else "⬜" 
-        text += f"{status} **{ex.get('exercise', 'Упр')}** ({done_count}/{sets_count})\n"
-    return text
-
+# ================= НОВАЯ КЛАВИАТУРА С ЗАГОЛОВКАМИ =================
 def workout_keyboard(user_id):
     markup = types.InlineKeyboardMarkup()
     workout = active_workouts.get(user_id)
@@ -100,19 +88,24 @@ def workout_keyboard(user_id):
     program = workout['program']
     completed_sets = workout.get('completed_sets', {})
 
-    # Генерируем кнопки для каждого упражнения отдельно
     for i, ex in enumerate(program):
         sets_count = int(ex.get('sets', 1))
         reps = ex.get('reps', '0')
+        done_count = len(completed_sets.get(i, []))
         
+        # Заголовок упражнения (статус + название)
+        status = "✅" if done_count == sets_count else "⬜"
+        header_text = f"{status} {ex.get('exercise', 'Упр')} ({done_count}/{sets_count})"
+        
+        # Добавляем заголовок как отдельную кнопку (она будет на всю ширину, если одна в ряду)
+        markup.add(types.InlineKeyboardButton(header_text, callback_data=f"header_{i}"))
+        
+        # Ряд с подходами под заголовком
         row_buttons = []
         for s in range(sets_count):
             is_done = s in completed_sets.get(i, [])
             label = "👍" if is_done else "⚪"
-            # callback_data кодирует: set_номерУпражнения_номерПодхода
-            row_buttons.append(types.InlineKeyboardButton(f"{label} {sets_count}x{reps}", callback_data=f"set_{i}_{s}"))
-        
-        # Добавляем ряд кнопок именно для этого упражнения
+            row_buttons.append(types.InlineKeyboardButton(f"{label} {s+1}х{reps}", callback_data=f"set_{i}_{s}"))
         markup.row(*row_buttons)
 
     # Кнопка завершения в самом низу
@@ -130,7 +123,7 @@ def main_keyboard(user_id):
         markup.row("⚙️ Админ-панель")
     return markup
 
-# ================= ХЭНДЛЕРЫ СООБЩЕНИЙ =================
+# ================= ХЭНДЛЕРЫ =================
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -246,13 +239,18 @@ def handle_text(message):
     else:
         bot.send_message(message.chat.id, "Используй кнопки 👇", reply_markup=main_keyboard(user_id))
 
-# ================= ОБРАБОТЧИКИ КНОПОК (CALLBACK) =================
+# ================= ОБРАБОТЧИКИ КНОПОК =================
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     msg_id = call.message.message_id
     data = call.data
+
+    # --- ЗАГЛУШКА ДЛЯ ЗАГОЛОВКОВ (просто показывает "Выполняй подходы!") ---
+    if data.startswith("header_"):
+        bot.answer_callback_query(call.id, "Выполни все подходы этого упражнения! 💪")
+        return
 
     # --- АДМИН ПАНЕЛЬ ---
     if data == "admin_motivate":
@@ -305,7 +303,7 @@ def callback_query(call):
             bot.send_photo(chat_id, img, caption="Твой график веса 📈🍑")
         except Exception as e: bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
 
-    # --- ТРЕНИРОВКИ (ВИЗУАЛЬНО РАЗДЕЛЕННЫЕ ПО УПРАЖНЕНИЯМ) ---
+    # --- ТРЕНИРОВКИ ---
     elif data == "nopower_postpone": bot.edit_message_text("🛋 Перенесено на завтра. Отдыхай!", chat_id, msg_id)
     elif data == "nopower_skip":
         if sh:
@@ -317,7 +315,7 @@ def callback_query(call):
         day = data.replace("day_", ""); program = get_program_from_sheet(day)
         if not program: bot.answer_callback_query(call.id, f"Программа '{day}' пуста!"); return
         active_workouts[user_id] = {'day': day, 'program': program, 'completed_sets': {}}
-        text = get_workout_text(user_id)
+        text = f"🏋️ **Тренировка: {day}**\n\nНажимай на кнопки по мере выполнения:"
         bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
         
     elif data.startswith("set_"):
@@ -336,8 +334,9 @@ def callback_query(call):
             completed_sets[ex_idx].append(set_idx) 
 
         active_workouts[user_id]['completed_sets'] = completed_sets
-        text = get_workout_text(user_id)
-        # Обновляем и текст (статус упражнения), и кнопки (статус подходов)
+        
+        # Обновляем клавиатуру (текст остается тот же, меняются только кнопки)
+        text = f"🏋️ **Тренировка: {active_workouts[user_id]['day']}**\n\nНажимай на кнопки по мере выполнения:"
         bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=workout_keyboard(user_id))
 
     elif data == "finish":
